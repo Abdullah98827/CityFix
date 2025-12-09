@@ -65,15 +65,21 @@ export default function CitizenHome() {
           <Text style={styles.cardDesc}>Report a new city issue</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.card} onPress={() => alert('Coming soon!')}>
+        <TouchableOpacity 
+        style={styles.card} 
+        onPress={() => router.push('/(citizen)/my-reports')}
+        >
           <Text style={styles.cardTitle}>My Reports</Text>
           <Text style={styles.cardDesc}>View your submitted reports</Text>
-        </TouchableOpacity>
+          </TouchableOpacity>
 
-        <TouchableOpacity style={styles.card} onPress={() => alert('Coming soon!')}>
+        <TouchableOpacity 
+        style={styles.card} 
+        onPress={() => router.push('/(citizen)/map')}
+        >
           <Text style={styles.cardTitle}>Map View</Text>
-          <Text style={styles.cardDesc}>See issues on the map</Text>
-        </TouchableOpacity>
+          <Text style={styles.cardDesc}>See all issues on the map</Text>
+          </TouchableOpacity>
       </View>
 
       <CustomButton title="Sign Out" onPress={handleLogout} variant="danger" />

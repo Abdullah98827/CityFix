@@ -41,19 +41,26 @@ export default function LoginScreen() {
         const userName = userData.name || 'User';
         const userRole = userData.role || 'citizen';
 
-        setMessage(`Welcome back, ${userName}! Logging in...`);
+        setMessage(`Welcome ${userName}! Logging in...`);
         setIsError(false);
 
         // Route based on role
         setTimeout(() => {
-          if (userRole === 'citizen') {
-            router.replace('/(citizen)/home');
-          } else {
-            // Add other roles later, e.g., dispatcher
-            setMessage('Role not recognised. Contact support.');
-            setIsError(true);
-          }
-        }, 1500);
+  if (userRole === 'citizen') {
+    router.replace('/(citizen)/home');
+  } else if (userRole === 'dispatcher') {
+    router.replace('/(dispatcher)/home');
+  } else if (userRole === 'engineer') {
+    router.replace('/(engineer)/home');
+  } else if (userRole === 'qa') {
+    router.replace('/(qa)/home');
+  }  else if (userRole === 'admin') {
+    router.replace('/(admin)/home');
+  } else {
+    setMessage('Role not recognised — contact admin');
+    setIsError(true);
+  }
+}, 1500);
       } else {
         setMessage('User data not found. Please register again.');
         setIsError(true);
