@@ -5,6 +5,8 @@ export default function RootLayout() {
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="(auth)" />
       <Stack.Screen name="(citizen)" />
+      <Stack.Screen name="(dispatcher)" />
+      <Stack.Screen name="(admin)" />
     </Stack>
   );
 }
