@@ -53,22 +53,6 @@ export default function PhotosGallery({ photos = [] }) {
           </Text>
         </View>
       )}
-
-      {/* Navigation Arrows (optional - shows user there are more photos) */}
-      {photos.length > 1 && (
-        <>
-          {currentIndex > 0 && (
-            <View style={[styles.arrow, styles.leftArrow]}>
-              <Text style={styles.arrowText}>←</Text>
-            </View>
-          )}
-          {currentIndex < photos.length - 1 && (
-            <View style={[styles.arrow, styles.rightArrow]}>
-              <Text style={styles.arrowText}>→</Text>
-            </View>
-          )}
-        </>
-      )}
     </View>
   );
 }

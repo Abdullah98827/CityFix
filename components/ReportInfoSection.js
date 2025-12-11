@@ -3,7 +3,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import MapView, { Marker } from 'react-native-maps';
 
 export default function ReportInfoSection({ report }) {
-  // Gets the status badge color based on status
+  // Gets status badge color based on status
   const getStatusColor = (status) => {
     switch (status) {
       case 'submitted':
