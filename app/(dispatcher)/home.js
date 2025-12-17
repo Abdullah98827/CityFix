@@ -1,13 +1,14 @@
+// app/(dispatcher)/home.js - Dispatcher Console Inbox
 import { useRouter } from 'expo-router';
-import { collection, onSnapshot, orderBy, query, where } from 'firebase/firestore';
+import { collection, onSnapshot, orderBy, query } from 'firebase/firestore';
 import { useEffect, useRef, useState } from 'react';
 import {
-    ActivityIndicator,
-    FlatList,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  FlatList,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { db } from '../../backend/firebase';
 import ReportCard from '../../components/ReportCard';
@@ -17,44 +18,40 @@ export default function DispatcherHome() {
   const router = useRouter();
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState('new'); 
+  const [filter, setFilter] = useState('new'); // 'new', 'assigned', 'all'
   
   // Store unsubscribe function for cleanup before sign out
   const unsubscribeRef = useRef(null);
 
   useEffect(() => {
-    // Build query based on selected filter
-    let q;
-    
-    if (filter === 'new') {
-      // Show only new reports that haven't been assigned yet
-      q = query(
-        collection(db, 'reports'),
-        where('status', '==', 'submitted'),
-        orderBy('createdAt', 'desc')
-      );
-    } else if (filter === 'assigned') {
-      // Show reports that have been assigned to engineers
-      q = query(
-        collection(db, 'reports'),
-        where('status', 'in', ['assigned', 'in progress']),
-        orderBy('createdAt', 'desc')
-      );
-    } else {
-      // Show all reports
-      q = query(
-        collection(db, 'reports'),
-        orderBy('createdAt', 'desc')
-      );
-    }
+    // Get ALL reports and filter in memory (no index needed)
+    const q = query(
+      collection(db, 'reports'),
+      orderBy('createdAt', 'desc')
+    );
 
     // Listen to real-time updates from Firestore
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const reportsList = [];
+      const allReports = [];
       snapshot.forEach((doc) => {
-        reportsList.push({ id: doc.id, ...doc.data() });
+        allReports.push({ id: doc.id, ...doc.data() });
       });
-      setReports(reportsList);
+      
+      // Filter in JavaScript based on selected filter
+      let filteredReports = allReports;
+      
+      if (filter === 'new') {
+        // Show only new reports
+        filteredReports = allReports.filter(r => r.status === 'submitted');
+      } else if (filter === 'assigned') {
+        // Show assigned reports
+        filteredReports = allReports.filter(r => 
+          r.status === 'assigned' || r.status === 'in progress'
+        );
+      }
+      // 'all' filter shows everything (no filtering needed)
+      
+      setReports(filteredReports);
       setLoading(false);
     });
 
@@ -143,9 +140,10 @@ export default function DispatcherHome() {
           data={reports}
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => (
-            <TouchableOpacity onPress={() => handleReportPress(item.id)}>
-              <ReportCard report={item} />
-            </TouchableOpacity>
+            <ReportCard 
+              report={item} 
+              onPress={handleReportPress}
+            />
           )}
           contentContainerStyle={styles.list}
           showsVerticalScrollIndicator={false}

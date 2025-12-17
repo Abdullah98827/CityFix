@@ -120,14 +120,14 @@ export default function JobCard({ job, showDistance = false, userLocation = null
         {showDistance && distance && (
           <View style={styles.infoItem}>
             <Text style={styles.infoLabel}>Distance:</Text>
-            <Text style={styles.distanceText}>📍 {distance} miles away</Text>
+            <Text style={styles.distanceText}>{distance} miles away</Text>
           </View>
         )}
       </View>
 
       {/* Address */}
       <Text style={styles.address} numberOfLines={1}>
-        📍 {job.address || 'Address not available'}
+        {job.address || 'Address not available'}
       </Text>
     </View>
   );

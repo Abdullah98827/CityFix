@@ -1,15 +1,28 @@
+// components/ReportCard.js - Fixed to support custom navigation
 import { useRouter } from 'expo-router';
 import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
-export default function ReportCard({ report }) {
+export default function ReportCard({ report, onPress }) {
   const router = useRouter();
 
   const getStatusColor = (status) => {
     switch (status) {
       case 'submitted':   return '#F59E0B';
-      case 'in progress': return '#3B82F6';
+      case 'assigned':    return '#3B82F6';
+      case 'in progress': return '#8B5CF6';
       case 'resolved':    return '#10B981';
+      case 'verified':    return '#059669';
+      case 'reopened':    return '#DC2626';
       default:            return '#6B7280';
+    }
+  };
+
+  // Default navigation if no custom onPress provided
+  const handlePress = () => {
+    if (onPress) {
+      onPress(report.id);
+    } else {
+      router.push(`/report-detail/${report.id}`);
     }
   };
 
@@ -18,7 +31,7 @@ export default function ReportCard({ report }) {
   return (
     <TouchableOpacity
       style={styles.card}
-      onPress={() => router.push(`/report-detail/${report.id}`)}
+      onPress={handlePress}
     >
       {firstPhoto ? (
         <Image source={{ uri: firstPhoto }} style={styles.photo} />

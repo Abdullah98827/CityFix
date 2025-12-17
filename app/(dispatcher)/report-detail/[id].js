@@ -1,29 +1,28 @@
-// app/(dispatcher)/report-detail/[id].js - Refactored with Reusable Components
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
-    collection,
-    doc,
-    getDoc,
-    getDocs,
-    query,
-    updateDoc,
-    where
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  query,
+  updateDoc,
+  where,
 } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { db } from '../../../backend/firebase';
 import CustomButton from '../../../components/CustomButton';
 import CustomInput from '../../../components/CustomInput';
 import FormMessage from '../../../components/FormMessage';
-import PhotosGallery from '../../../components/PhotosGallery';
+import MediaGallery from '../../../components/MediaGallery';
 import ReportHeader from '../../../components/ReportHeader';
 import ReportInfoSection from '../../../components/ReportInfoSection';
 
@@ -36,7 +35,6 @@ export default function DispatcherReportDetail() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
-  // Work order form fields
   const [selectedEngineer, setSelectedEngineer] = useState('');
   const [priority, setPriority] = useState('medium');
   const [deadline, setDeadline] = useState('');
@@ -45,17 +43,14 @@ export default function DispatcherReportDetail() {
   const [message, setMessage] = useState('');
   const [isError, setIsError] = useState(false);
 
-  // Fetch report and engineers
   useEffect(() => {
     const fetchData = async () => {
       try {
-        // Get report details
         const reportDoc = await getDoc(doc(db, 'reports', id));
         if (reportDoc.exists()) {
           setReport({ id: reportDoc.id, ...reportDoc.data() });
         }
 
-        // Get all engineers from UserMD collection
         const engineersQuery = query(
           collection(db, 'UserMD'),
           where('role', '==', 'engineer')
@@ -78,12 +73,10 @@ export default function DispatcherReportDetail() {
     fetchData();
   }, [id]);
 
-  // Handle work order assignment
   const handleAssign = async () => {
     setMessage('');
     setIsError(false);
 
-    // Validation
     if (!selectedEngineer) {
       setMessage('Please select an engineer');
       setIsError(true);
@@ -96,10 +89,9 @@ export default function DispatcherReportDetail() {
       return;
     }
 
-    // Confirm assignment
     Alert.alert(
       'Confirm Assignment',
-      `Assign this report to ${engineers.find(e => e.id === selectedEngineer)?.name}?`,
+      `Assign this report to ${engineers.find((e) => e.id === selectedEngineer)?.name}?`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -107,11 +99,10 @@ export default function DispatcherReportDetail() {
           onPress: async () => {
             setSubmitting(true);
             try {
-              // Update report with work order details
               await updateDoc(doc(db, 'reports', id), {
                 status: 'assigned',
                 assignedTo: selectedEngineer,
-                assignedToName: engineers.find(e => e.id === selectedEngineer)?.name,
+                assignedToName: engineers.find((e) => e.id === selectedEngineer)?.name,
                 priority,
                 deadline,
                 dispatcherNotes: notes,
@@ -121,7 +112,6 @@ export default function DispatcherReportDetail() {
               setMessage('Report assigned successfully!');
               setIsError(false);
 
-              // Navigate back after 1.5 seconds
               setTimeout(() => {
                 router.back();
               }, 1500);
@@ -156,22 +146,20 @@ export default function DispatcherReportDetail() {
 
   return (
     <View style={styles.wrapper}>
-      {/* Reusable Header Component */}
       <ReportHeader title="Report Details" />
 
       <ScrollView style={styles.container}>
-        {/* Reusable Photo Gallery Component with Counter */}
-        <PhotosGallery photos={report.photos} />
+        {/* BEFORE Media (Photos OR Video) */}
+        <MediaGallery photos={report.photos} video={report.video} />
 
-        {/* Reusable Report Info Component */}
+        {/* Report Info */}
         <ReportInfoSection report={report} />
 
-        {/* Dispatcher-Specific: Work Order Assignment Section */}
+        {/* Work Order Assignment Section */}
         {report.status === 'submitted' && (
           <View style={styles.workOrderSection}>
             <Text style={styles.sectionTitle}>Create Work Order</Text>
 
-            {/* Select Engineer */}
             <Text style={styles.inputLabel}>Assign to Engineer</Text>
             {engineers.length === 0 ? (
               <Text style={styles.noEngineers}>No engineers available</Text>
@@ -191,31 +179,22 @@ export default function DispatcherReportDetail() {
                       <Text style={styles.engineerName}>{engineer.name}</Text>
                       <Text style={styles.engineerEmail}>{engineer.email}</Text>
                     </View>
-                    {selectedEngineer === engineer.id && (
-                      <Text style={styles.checkMark}>✓</Text>
-                    )}
+                    {selectedEngineer === engineer.id && <Text style={styles.checkMark}>✓</Text>}
                   </TouchableOpacity>
                 ))}
               </View>
             )}
 
-            {/* Priority */}
             <Text style={styles.inputLabel}>Priority</Text>
             <View style={styles.priorityButtons}>
               {['low', 'medium', 'high', 'urgent'].map((p) => (
                 <TouchableOpacity
                   key={p}
-                  style={[
-                    styles.priorityBtn,
-                    priority === p && styles.priorityBtnSelected,
-                  ]}
+                  style={[styles.priorityBtn, priority === p && styles.priorityBtnSelected]}
                   onPress={() => setPriority(p)}
                 >
                   <Text
-                    style={[
-                      styles.priorityText,
-                      priority === p && styles.priorityTextSelected,
-                    ]}
+                    style={[styles.priorityText, priority === p && styles.priorityTextSelected]}
                   >
                     {p.toUpperCase()}
                   </Text>
@@ -223,15 +202,13 @@ export default function DispatcherReportDetail() {
               ))}
             </View>
 
-            {/* Deadline */}
             <CustomInput
-              label="Deadline (e.g. 2025-12-15)"
+              label="Deadline (e.g. 2025-12-31)"
               placeholder="YYYY-MM-DD"
               value={deadline}
               onChangeText={setDeadline}
             />
 
-            {/* Notes */}
             <CustomInput
               label="Dispatcher Notes (optional)"
               placeholder="Add any instructions or notes..."
@@ -241,23 +218,17 @@ export default function DispatcherReportDetail() {
               numberOfLines={4}
             />
 
-            {/* Message */}
             <FormMessage message={message} isError={isError} />
 
-            {/* Submit Button */}
             {submitting ? (
               <ActivityIndicator size="large" color="#4F46E5" style={{ marginVertical: 20 }} />
             ) : (
-              <CustomButton
-                title="Assign to Engineer"
-                onPress={handleAssign}
-                variant="secondary"
-              />
+              <CustomButton title="Assign to Engineer" onPress={handleAssign} variant="secondary" />
             )}
           </View>
         )}
 
-        {/* If already assigned, show assignment details */}
+        {/* If already assigned */}
         {report.status !== 'submitted' && (
           <View style={styles.assignedInfo}>
             <Text style={styles.sectionTitle}>Assignment Details</Text>
@@ -293,17 +264,17 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   workOrderSection: { paddingHorizontal: 24, paddingBottom: 24 },
-  sectionTitle: { 
-    fontSize: 22, 
-    fontWeight: '800', 
-    color: '#1e293b', 
-    marginBottom: 16 
+  sectionTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#1e293b',
+    marginBottom: 16,
   },
-  inputLabel: { 
-    fontSize: 15, 
-    fontWeight: '600', 
-    color: '#333', 
-    marginBottom: 12 
+  inputLabel: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 12,
   },
   engineerList: { marginBottom: 24 },
   engineerCard: {
@@ -331,16 +302,16 @@ const styles = StyleSheet.create({
   engineerName: { fontSize: 17, fontWeight: '700', color: '#1e293b' },
   engineerEmail: { fontSize: 14, color: '#64748b', marginTop: 2 },
   checkMark: { fontSize: 24, color: '#4F46E5', fontWeight: 'bold' },
-  noEngineers: { 
-    fontSize: 16, 
-    color: '#94a3b8', 
-    textAlign: 'center', 
-    marginBottom: 24 
+  noEngineers: {
+    fontSize: 16,
+    color: '#94a3b8',
+    textAlign: 'center',
+    marginBottom: 24,
   },
-  priorityButtons: { 
-    flexDirection: 'row', 
-    gap: 8, 
-    marginBottom: 24 
+  priorityButtons: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 24,
   },
   priorityBtn: {
     flex: 1,
@@ -355,10 +326,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#4F46E5',
     borderColor: '#4F46E5',
   },
-  priorityText: { 
-    fontSize: 13, 
-    fontWeight: '700', 
-    color: '#64748b' 
+  priorityText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#64748b',
   },
   priorityTextSelected: { color: '#fff' },
   assignedInfo: { paddingHorizontal: 24, paddingBottom: 24 },
@@ -367,19 +338,19 @@ const styles = StyleSheet.create({
     padding: 16,
     borderRadius: 12,
   },
-  infoRow: { 
-    flexDirection: 'row', 
-    justifyContent: 'space-between', 
-    marginBottom: 12 
+  infoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 12,
   },
   label: { fontSize: 15, color: '#64748b', fontWeight: '600' },
   value: { fontSize: 15, color: '#334155', fontWeight: '500' },
   notesBox: { marginTop: 12 },
-  notesText: { 
-    fontSize: 15, 
-    color: '#475569', 
-    marginTop: 8, 
-    lineHeight: 22 
+  notesText: {
+    fontSize: 15,
+    color: '#475569',
+    marginTop: 8,
+    lineHeight: 22,
   },
   error: { fontSize: 18, color: '#dc2626' },
 });

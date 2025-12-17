@@ -1,23 +1,24 @@
-// app/(engineer)/job-detail/[id].js - Job Detail & Resolution Form
+// app/(engineer)/job-detail/[id].js — FINAL WITH expo-video + STORAGE + REMOVE BUTTONS
 import * as ImagePicker from 'expo-image-picker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import { useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    Image,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
 } from 'react-native';
-import { db } from '../../../backend/firebase';
+import { auth, db, storage } from '../../../backend/firebase';
+import AfterMediaGallery from '../../../components/AfterMediaGallery';
+import AssignmentDetails from '../../../components/AssignmentDetails';
 import CustomButton from '../../../components/CustomButton';
 import CustomInput from '../../../components/CustomInput';
 import FormMessage from '../../../components/FormMessage';
-import PhotoGallery from '../../../components/PhotosGallery';
+import MediaGallery from '../../../components/MediaGallery';
 import ReportHeader from '../../../components/ReportHeader';
 import ReportInfoSection from '../../../components/ReportInfoSection';
 
@@ -29,15 +30,14 @@ export default function EngineerJobDetail() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
-  // Resolution form fields
   const [resolutionNotes, setResolutionNotes] = useState('');
   const [afterPhotos, setAfterPhotos] = useState([]);
-  const [newStatus, setNewStatus] = useState('in progress'); // 'in progress' or 'resolved'
+  const [afterVideo, setAfterVideo] = useState(null);
+  const [newStatus, setNewStatus] = useState('in progress');
 
   const [message, setMessage] = useState('');
   const [isError, setIsError] = useState(false);
 
-  // Fetch job details
   useEffect(() => {
     const fetchJob = async () => {
       try {
@@ -46,16 +46,10 @@ export default function EngineerJobDetail() {
           const jobData = { id: jobDoc.id, ...jobDoc.data() };
           setJob(jobData);
           
-          // Pre-fill form if already has resolution data
-          if (jobData.resolutionNotes) {
-            setResolutionNotes(jobData.resolutionNotes);
-          }
-          if (jobData.afterPhotos) {
-            setAfterPhotos(jobData.afterPhotos);
-          }
-          if (jobData.status === 'in progress') {
-            setNewStatus('in progress');
-          }
+          if (jobData.resolutionNotes) setResolutionNotes(jobData.resolutionNotes);
+          if (jobData.afterPhotos) setAfterPhotos(jobData.afterPhotos);
+          if (jobData.afterVideo) setAfterVideo(jobData.afterVideo);
+          if (jobData.status === 'in progress') setNewStatus('in progress');
         }
       } catch (error) {
         console.error('Error fetching job:', error);
@@ -69,8 +63,7 @@ export default function EngineerJobDetail() {
     fetchJob();
   }, [id]);
 
-  // Pick image from gallery
-  const pickImage = async () => {
+  const pickAfterPhoto = async () => {
     if (afterPhotos.length >= 5) {
       setMessage('Maximum 5 after photos');
       setIsError(true);
@@ -84,11 +77,11 @@ export default function EngineerJobDetail() {
 
     if (!result.canceled) {
       setAfterPhotos([...afterPhotos, result.assets[0].uri]);
+      setAfterVideo(null);
     }
   };
 
-  // Take photo with camera
-  const takePhoto = async () => {
+  const takeAfterPhoto = async () => {
     if (afterPhotos.length >= 5) {
       setMessage('Maximum 5 after photos');
       setIsError(true);
@@ -109,15 +102,88 @@ export default function EngineerJobDetail() {
 
     if (!result.canceled) {
       setAfterPhotos([...afterPhotos, result.assets[0].uri]);
+      setAfterVideo(null);
     }
   };
 
-  // Remove photo
-  const removePhoto = (index) => {
-    setAfterPhotos(afterPhotos.filter((_, i) => i !== index));
+  const pickAfterVideo = async () => {
+    try {
+      let result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['videos'],
+        allowsEditing: true,
+        quality: 0.8,
+        videoMaxDuration: 20,
+      });
+
+      if (!result.canceled) {
+        const videoAsset = result.assets[0];
+        if (videoAsset.duration && videoAsset.duration > 20000) {
+          Alert.alert('Video Too Long', 'Please select a video under 20 seconds');
+          return;
+        }
+
+        Alert.alert('Switch to Video?', 'This will remove after photos. Continue?', [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Continue',
+            onPress: () => {
+              setAfterPhotos([]);
+              setAfterVideo(videoAsset.uri);
+            },
+          },
+        ]);
+      }
+    } catch {
+      setMessage('Failed to pick video');
+      setIsError(true);
+    }
   };
 
-  // Start working on job (change status to "in progress")
+  const recordAfterVideo = async () => {
+    try {
+      let perm = await ImagePicker.requestCameraPermissionsAsync();
+      if (!perm.granted) {
+        setMessage('Camera permission needed');
+        setIsError(true);
+        return;
+      }
+
+      let result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ['videos'],
+        allowsEditing: true,
+        quality: 0.8,
+        videoMaxDuration: 20,
+      });
+
+      if (!result.canceled) {
+        const videoAsset = result.assets[0];
+
+        Alert.alert('Switch to Video?', 'This will remove after photos. Continue?', [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Continue',
+            onPress: () => {
+              setAfterPhotos([]);
+              setAfterVideo(videoAsset.uri);
+            },
+          },
+        ]);
+      }
+    } catch {
+      setMessage('Failed to record video');
+      setIsError(true);
+    }
+  };
+
+  // Remove function for AfterMediaGallery
+  const handleRemoveAfterMedia = (index) => {
+    if (afterVideo && index === 0) {
+      setAfterVideo(null);
+    } else {
+      setAfterPhotos(afterPhotos.filter((_, i) => i !== index));
+    }
+  };
+
   const handleStartJob = async () => {
     setSubmitting(true);
     try {
@@ -127,23 +193,21 @@ export default function EngineerJobDetail() {
       });
 
       setJob({ ...job, status: 'in progress' });
-      setMessage('Job status updated to In Progress');
+      setMessage('Job started');
       setIsError(false);
     } catch (error) {
       console.error('Error starting job:', error);
-      setMessage('Failed to update status');
+      setMessage('Failed to start job');
       setIsError(true);
     } finally {
       setSubmitting(false);
     }
   };
 
-  // Submit resolution
   const handleResolve = async () => {
     setMessage('');
     setIsError(false);
 
-    // Validation
     if (newStatus === 'resolved') {
       if (!resolutionNotes.trim()) {
         setMessage('Please add resolution notes');
@@ -151,19 +215,16 @@ export default function EngineerJobDetail() {
         return;
       }
 
-      if (afterPhotos.length === 0) {
-        setMessage('Please add at least one after photo');
+      if (afterPhotos.length === 0 && !afterVideo) {
+        setMessage('Please add after photos or video');
         setIsError(true);
         return;
       }
     }
 
-    // Confirm resolution
     Alert.alert(
-      'Confirm Resolution',
-      newStatus === 'resolved'
-        ? 'Mark this job as resolved? It will be sent to QA for verification.'
-        : 'Save your progress? You can continue working on this later.',
+      'Confirm',
+      newStatus === 'resolved' ? 'Mark job as resolved?' : 'Save progress?',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -171,28 +232,45 @@ export default function EngineerJobDetail() {
           onPress: async () => {
             setSubmitting(true);
             try {
+              // Upload after photos
+              const uploadedAfterPhotoUrls = [];
+              for (let uri of afterPhotos) {
+                const fileName = `after_photo_${Date.now()}_${Math.random().toString(36).substring(7)}.jpg`;
+                const storageRef = ref(storage, `images/${auth.currentUser.uid}/${fileName}`);
+                const response = await fetch(uri);
+                const blob = await response.blob();
+                await uploadBytes(storageRef, blob);
+                const url = await getDownloadURL(storageRef);
+                uploadedAfterPhotoUrls.push(url);
+              }
+
+              // Upload after video
+              let uploadedAfterVideoUrl = null;
+              if (afterVideo) {
+                const fileName = `after_video_${Date.now()}.mp4`;
+                const storageRef = ref(storage, `videos/${auth.currentUser.uid}/${fileName}`);
+                const response = await fetch(afterVideo);
+                const blob = await response.blob();
+                await uploadBytes(storageRef, blob);
+                uploadedAfterVideoUrl = await getDownloadURL(storageRef);
+              }
+
               const updateData = {
                 status: newStatus,
                 resolutionNotes: resolutionNotes.trim(),
-                afterPhotos,
+                afterPhotos: uploadedAfterPhotoUrls,
+                afterVideo: uploadedAfterVideoUrl,
                 resolvedAt: newStatus === 'resolved' ? new Date() : null,
               };
 
               await updateDoc(doc(db, 'reports', id), updateData);
 
-              setMessage(
-                newStatus === 'resolved'
-                  ? 'Job marked as resolved! Sent to QA for verification.'
-                  : 'Progress saved successfully!'
-              );
+              setMessage(newStatus === 'resolved' ? 'Job marked resolved!' : 'Progress saved!');
               setIsError(false);
 
-              // Navigate back after 2 seconds
-              setTimeout(() => {
-                router.back();
-              }, 2000);
+              setTimeout(() => router.back(), 2000);
             } catch (error) {
-              console.error('Error updating job:', error);
+              console.error('Error:', error);
               setMessage('Failed to update job');
               setIsError(true);
             } finally {
@@ -220,237 +298,145 @@ export default function EngineerJobDetail() {
     );
   }
 
-  // Calculate deadline info
-  const getDeadlineInfo = () => {
-    if (!job.deadline) return null;
-    
-    const deadlineDate = new Date(job.deadline);
-    const today = new Date();
-    const diffTime = deadlineDate - today;
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    
-    let color = '#10B981'; // Green
-    let text = `${diffDays} days left`;
-    
-    if (diffDays < 0) {
-      color = '#EF4444'; // Red
-      text = `${Math.abs(diffDays)} days overdue`;
-    } else if (diffDays === 0) {
-      color = '#F59E0B'; // Orange
-      text = 'Due today!';
-    } else if (diffDays <= 2) {
-      color = '#F59E0B'; // Orange
-      text = diffDays === 1 ? '1 day left' : `${diffDays} days left`;
-    }
-    
-    return { color, text };
-  };
-
-  const deadlineInfo = getDeadlineInfo();
-
   return (
     <View style={styles.wrapper}>
-      {/* Reusable Header */}
       <ReportHeader title="Job Details" />
 
       <ScrollView style={styles.container}>
-        {/* Before Photos */}
-        <PhotoGallery photos={job.photos} />
-
-        {/* Job Info */}
+        <MediaGallery photos={job.photos} video={job.video} />
         <ReportInfoSection report={job} />
 
-        {/* Assignment Details */}
-        <View style={styles.assignmentSection}>
-          <Text style={styles.sectionTitle}>Assignment Details</Text>
-          
-          <View style={styles.infoBox}>
-            {/* Priority */}
-            <View style={styles.infoRow}>
-              <Text style={styles.label}>Priority:</Text>
-              <View
-                style={[
-                  styles.priorityBadge,
-                  {
-                    backgroundColor:
-                      job.priority === 'urgent'
-                        ? '#DC2626'
-                        : job.priority === 'high'
-                        ? '#F59E0B'
-                        : job.priority === 'medium'
-                        ? '#3B82F6'
-                        : '#10B981',
-                  },
-                ]}
-              >
-                <Text style={styles.badgeText}>{job.priority?.toUpperCase()}</Text>
-              </View>
+        <AssignmentDetails report={job} />
+
+        {job.status === 'reopened' && (
+          <View style={styles.reopenedSection}>
+            <Text style={styles.sectionTitle}>QA Feedback</Text>
+            <View style={styles.reopenedBox}>
+              <Text style={styles.reopenedLabel}>Report reopened by QA</Text>
+              {job.reopenReason && <Text style={styles.reopenReasonText}>{job.reopenReason}</Text>}
+              {job.qaFeedback && <Text style={styles.qaFeedbackText}>{job.qaFeedback}</Text>}
+              <Text style={styles.reopenInstruction}>
+                Please fix the issues and resubmit.
+              </Text>
             </View>
 
-            {/* Deadline with Countdown */}
-            {deadlineInfo && (
-              <View style={styles.infoRow}>
-                <Text style={styles.label}>Deadline:</Text>
-                <View style={{ alignItems: 'flex-end' }}>
-                  <Text style={styles.value}>{job.deadline}</Text>
-                  <View
-                    style={[styles.deadlineBadge, { backgroundColor: deadlineInfo.color }]}
-                  >
-                    <Text style={styles.badgeText}>{deadlineInfo.text}</Text>
+            {job.resolutionNotes && (
+              <View style={styles.previousWorkSection}>
+                <Text style={styles.previousWorkTitle}>Previous Work</Text>
+                <View style={styles.infoBox}>
+                  <Text style={styles.label}>Previous Notes:</Text>
+                  <Text style={styles.notesText}>{job.resolutionNotes}</Text>
+                  <View style={{ marginTop: 16 }}>
+                    <AfterMediaGallery photos={job.afterPhotos} video={job.afterVideo} title="" />
                   </View>
                 </View>
               </View>
             )}
 
-            {/* Dispatcher Notes */}
-            {job.dispatcherNotes && (
-              <View style={styles.notesBox}>
-                <Text style={styles.label}>Dispatcher Notes:</Text>
-                <Text style={styles.notesText}>{job.dispatcherNotes}</Text>
-              </View>
-            )}
-          </View>
-        </View>
-
-        {/* Resolution Form (only if not resolved) */}
-        {job.status !== 'resolved' && (
-          <View style={styles.resolutionSection}>
-            <Text style={styles.sectionTitle}>Resolution</Text>
-
-            {/* Status Toggle */}
-            {job.status === 'assigned' && (
-              <View style={styles.startJobContainer}>
-                <Text style={styles.instructionText}>
-                  Start working on this job to update your progress
-                </Text>
-                {submitting ? (
-                  <ActivityIndicator size="large" color="#4F46E5" />
-                ) : (
-                  <CustomButton
-                    title="Start Job"
-                    onPress={handleStartJob}
-                    variant="secondary"
-                  />
-                )}
-              </View>
-            )}
-
-            {job.status === 'in progress' && (
-              <>
-                {/* Status Selector */}
-                <Text style={styles.inputLabel}>Job Status</Text>
-                <View style={styles.statusButtons}>
-                  <TouchableOpacity
-                    style={[
-                      styles.statusBtn,
-                      newStatus === 'in progress' && styles.statusBtnSelected,
-                    ]}
-                    onPress={() => setNewStatus('in progress')}
-                  >
-                    <Text
-                      style={[
-                        styles.statusBtnText,
-                        newStatus === 'in progress' && styles.statusBtnTextSelected,
-                      ]}
-                    >
-                      In Progress
-                    </Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[
-                      styles.statusBtn,
-                      newStatus === 'resolved' && styles.statusBtnSelected,
-                    ]}
-                    onPress={() => setNewStatus('resolved')}
-                  >
-                    <Text
-                      style={[
-                        styles.statusBtnText,
-                        newStatus === 'resolved' && styles.statusBtnTextSelected,
-                      ]}
-                    >
-                      Resolved
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-
-                {/* Resolution Notes */}
-                <CustomInput
-                  label="Resolution Notes"
-                  placeholder="Describe what you did to fix the issue..."
-                  value={resolutionNotes}
-                  onChangeText={setResolutionNotes}
-                  multiline
-                  numberOfLines={4}
-                />
-
-                {/* After Photos */}
-                <Text style={styles.inputLabel}>After Photos (1-5 required)</Text>
-                <View style={styles.photoButtons}>
-                  <TouchableOpacity style={styles.photoBtn} onPress={pickImage}>
-                    <Text style={styles.photoBtnText}>Gallery</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.photoBtn} onPress={takePhoto}>
-                    <Text style={styles.photoBtnText}>Camera</Text>
-                  </TouchableOpacity>
-                </View>
-
-                {afterPhotos.length > 0 && (
-                  <View style={styles.photoGrid}>
-                    {afterPhotos.map((uri, i) => (
-                      <View key={i} style={styles.photoBox}>
-                        <Image source={{ uri }} style={styles.photo} />
-                        <TouchableOpacity
-                          style={styles.removeBtn}
-                          onPress={() => removePhoto(i)}
-                        >
-                          <Text style={styles.removeText}>×</Text>
-                        </TouchableOpacity>
-                      </View>
-                    ))}
-                  </View>
-                )}
-                <Text style={styles.photoCount}>
-                  {afterPhotos.length} / 5 photos
-                </Text>
-
-                {/* Message */}
-                <FormMessage message={message} isError={isError} />
-
-                {/* Submit Button */}
-                {submitting ? (
-                  <ActivityIndicator size="large" color="#4F46E5" style={{ marginVertical: 20 }} />
-                ) : (
-                  <CustomButton
-                    title={
-                      newStatus === 'resolved' ? 'Mark as Resolved' : 'Save Progress'
-                    }
-                    onPress={handleResolve}
-                    variant="secondary"
-                  />
-                )}
-              </>
+            {submitting ? (
+              <ActivityIndicator size="large" color="#4F46E5" style={{ marginVertical: 20 }} />
+            ) : (
+              <CustomButton
+                title="Start Fixing"
+                onPress={handleStartJob}
+                variant="secondary"
+              />
             )}
           </View>
         )}
 
-        {/* If already resolved, show resolution details */}
-        {job.status === 'resolved' && (
+        {job.status === 'in progress' && (
+          <View style={styles.resolutionSection}>
+            <Text style={styles.sectionTitle}>Resolution</Text>
+
+            <Text style={styles.inputLabel}>Job Status</Text>
+            <View style={styles.statusButtons}>
+              <CustomButton
+                title="In Progress"
+                onPress={() => setNewStatus('in progress')}
+                variant={newStatus === 'in progress' ? 'secondary' : 'default'}
+              />
+              <CustomButton
+                title="Resolved"
+                onPress={() => setNewStatus('resolved')}
+                variant={newStatus === 'resolved' ? 'secondary' : 'default'}
+              />
+            </View>
+
+            <CustomInput
+              label="Resolution Notes"
+              placeholder="Describe what you did..."
+              value={resolutionNotes}
+              onChangeText={setResolutionNotes}
+              multiline
+              numberOfLines={4}
+            />
+
+            <Text style={styles.inputLabel}>After Evidence (Required)</Text>
+            <Text style={styles.helperText}>Add photos (1-5) OR one video (max 20 sec)</Text>
+
+            <View style={styles.photoButtons}>
+              <CustomButton title="Gallery" onPress={pickAfterPhoto} variant="secondary" />
+              <CustomButton title="Camera" onPress={takeAfterPhoto} variant="secondary" />
+            </View>
+
+            {afterPhotos.length === 0 && !afterVideo && (
+              <View style={styles.photoButtons}>
+                <CustomButton title="Video Gallery" onPress={pickAfterVideo} variant="secondary" />
+                <CustomButton title="Record Video" onPress={recordAfterVideo} variant="secondary" />
+              </View>
+            )}
+
+            <AfterMediaGallery 
+              photos={afterPhotos} 
+              video={afterVideo} 
+              showRemove={true}
+              onRemove={handleRemoveAfterMedia}
+              title={`${afterPhotos.length || (afterVideo ? 1 : 0)} / 5`} 
+            />
+
+            <FormMessage message={message} isError={isError} />
+
+            {submitting ? (
+              <ActivityIndicator size="large" color="#4F46E5" style={{ marginVertical: 20 }} />
+            ) : (
+              <CustomButton
+                title={newStatus === 'resolved' ? 'Mark Resolved' : 'Save Progress'}
+                onPress={handleResolve}
+                variant="secondary"
+              />
+            )}
+          </View>
+        )}
+
+        {job.status === 'assigned' && (
+          <View style={styles.startJobContainer}>
+            <Text style={styles.instructionText}>
+              Start working on this job
+            </Text>
+            {submitting ? (
+              <ActivityIndicator size="large" color="#4F46E5" />
+            ) : (
+              <CustomButton title="Start Job" onPress={handleStartJob} variant="secondary" />
+            )}
+          </View>
+        )}
+
+        {(job.status === 'resolved' || job.status === 'verified') && (
           <View style={styles.resolvedSection}>
             <Text style={styles.sectionTitle}>Resolution Details</Text>
             <View style={styles.infoBox}>
               <Text style={styles.label}>Resolution Notes:</Text>
               <Text style={styles.notesText}>{job.resolutionNotes}</Text>
-              
-              {job.afterPhotos && job.afterPhotos.length > 0 && (
-                <View style={styles.afterPhotosSection}>
-                  <Text style={styles.label}>After Photos:</Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                    {job.afterPhotos.map((uri, i) => (
-                      <Image key={i} source={{ uri }} style={styles.afterPhotoThumb} />
-                    ))}
-                  </ScrollView>
+
+              <View style={{ marginTop: 16 }}>
+                <AfterMediaGallery photos={job.afterPhotos} video={job.afterVideo} title="After Evidence" />
+              </View>
+
+              {job.status === 'verified' && (
+                <View style={styles.verifiedBadge}>
+                  <Text style={styles.verifiedText}>VERIFIED BY QA</Text>
+                  {job.qaFeedback && <Text style={styles.qaFeedbackSuccess}>{job.qaFeedback}</Text>}
                 </View>
               )}
             </View>
@@ -465,113 +451,29 @@ const styles = StyleSheet.create({
   wrapper: { flex: 1, backgroundColor: '#fff' },
   container: { flex: 1, backgroundColor: '#fff' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  assignmentSection: { paddingHorizontal: 24, paddingBottom: 16 },
+  reopenedSection: { paddingHorizontal: 24, paddingBottom: 24, backgroundColor: '#fef2f2', paddingTop: 24 },
+  reopenedBox: { backgroundColor: '#fee2e2', padding: 16, borderRadius: 12, borderWidth: 2, borderColor: '#ef4444' },
+  reopenedLabel: { fontSize: 18, fontWeight: '800', color: '#991b1b', marginBottom: 16, textAlign: 'center' },
+  feedbackItem: { marginBottom: 16 },
+  feedbackLabel: { fontSize: 15, fontWeight: '700', color: '#7f1d1d', marginBottom: 6 },
+  reopenReasonText: { fontSize: 15, color: '#991b1b', lineHeight: 22, fontWeight: '500' },
+  qaFeedbackText: { fontSize: 15, color: '#dc2626', lineHeight: 22 },
+  reopenInstruction: { fontSize: 14, color: '#7f1d1d', fontStyle: 'italic', marginTop: 8, textAlign: 'center' },
+  previousWorkSection: { marginTop: 20 },
+  previousWorkTitle: { fontSize: 18, fontWeight: '700', color: '#334155', marginBottom: 12 },
   resolutionSection: { paddingHorizontal: 24, paddingBottom: 24 },
   resolvedSection: { paddingHorizontal: 24, paddingBottom: 24 },
-  sectionTitle: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: '#1e293b',
-    marginBottom: 16,
-  },
-  infoBox: {
-    backgroundColor: '#f8fafc',
-    padding: 16,
-    borderRadius: 12,
-  },
-  infoRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
+  sectionTitle: { fontSize: 22, fontWeight: '800', color: '#1e293b', marginBottom: 16 },
+  infoBox: { backgroundColor: '#f8fafc', padding: 16, borderRadius: 12 },
   label: { fontSize: 15, color: '#64748b', fontWeight: '600' },
-  value: { fontSize: 15, color: '#334155', fontWeight: '500' },
-  priorityBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
-  },
-  deadlineBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 10,
-    marginTop: 4,
-  },
-  badgeText: { color: '#fff', fontSize: 12, fontWeight: '700' },
-  notesBox: { marginTop: 12 },
-  notesText: {
-    fontSize: 15,
-    color: '#475569',
-    marginTop: 8,
-    lineHeight: 22,
-  },
-  startJobContainer: { marginBottom: 24 },
-  instructionText: {
-    fontSize: 15,
-    color: '#64748b',
-    marginBottom: 16,
-    textAlign: 'center',
-  },
-  inputLabel: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#333',
-    marginTop: 16,
-    marginBottom: 12,
-  },
+  notesText: { fontSize: 15, color: '#475569', marginTop: 8, lineHeight: 22 },
+  startJobContainer: { marginBottom: 24, paddingHorizontal: 24 },
+  instructionText: { fontSize: 15, color: '#64748b', marginBottom: 16, textAlign: 'center' },
+  inputLabel: { fontSize: 15, fontWeight: '600', color: '#333', marginTop: 16, marginBottom: 12 },
   statusButtons: { flexDirection: 'row', gap: 12, marginBottom: 24 },
-  statusBtn: {
-    flex: 1,
-    paddingVertical: 14,
-    borderRadius: 12,
-    backgroundColor: '#f1f5f9',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#e2e8f0',
-  },
-  statusBtnSelected: {
-    backgroundColor: '#4F46E5',
-    borderColor: '#4F46E5',
-  },
-  statusBtnText: { fontSize: 15, fontWeight: '700', color: '#64748b' },
-  statusBtnTextSelected: { color: '#fff' },
   photoButtons: { flexDirection: 'row', gap: 12, marginBottom: 15 },
-  photoBtn: {
-    flex: 1,
-    backgroundColor: '#2563EB',
-    padding: 14,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  photoBtnText: { color: '#fff', fontWeight: '600', fontSize: 15 },
-  photoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 10 },
-  photoBox: { width: '30%', aspectRatio: 1, position: 'relative' },
-  photo: { width: '100%', height: '100%', borderRadius: 12 },
-  removeBtn: {
-    position: 'absolute',
-    top: -8,
-    right: -8,
-    backgroundColor: '#EF4444',
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  removeText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
-  photoCount: {
-    textAlign: 'center',
-    marginVertical: 10,
-    color: '#666',
-    fontSize: 14,
-  },
-  afterPhotosSection: { marginTop: 16 },
-  afterPhotoThumb: {
-    width: 120,
-    height: 120,
-    borderRadius: 12,
-    marginRight: 12,
-  },
+  verifiedBadge: { marginTop: 20, padding: 16, backgroundColor: '#d1fae5', borderRadius: 12, alignItems: 'center' },
+  verifiedText: { fontSize: 18, fontWeight: '800', color: '#065f46', marginBottom: 8 },
+  qaFeedbackSuccess: { fontSize: 15, color: '#047857', textAlign: 'center' },
   error: { fontSize: 18, color: '#dc2626' },
 });

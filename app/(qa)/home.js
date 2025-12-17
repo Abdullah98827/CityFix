@@ -1,5 +1,4 @@
-// app/(engineer)/home.js - Engineer Dashboard
-import * as Location from 'expo-location';
+// app/(qa)/home.js - QA Verification Queue
 import { useRouter } from 'expo-router';
 import { collection, onSnapshot, orderBy, query, where } from 'firebase/firestore';
 import { useEffect, useRef, useState } from 'react';
@@ -11,86 +10,67 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
-import { auth, db } from '../../backend/firebase';
-import JobCard from '../../components/JobCard';
+import { db } from '../../backend/firebase';
+import ReportCard from '../../components/ReportCard';
 import SignOutButton from '../../components/SignOutButton';
 
-export default function EngineerHome() {
+export default function QAHome() {
   const router = useRouter();
-  const [jobs, setJobs] = useState([]);
+  const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState('active'); // 'active', 'completed', 'all'
-  const [userLocation, setUserLocation] = useState(null);
+  const [filter, setFilter] = useState('pending'); // 'pending', 'verified', 'reopened', 'all'
   
   // Store unsubscribe function for cleanup before sign out
   const unsubscribeRef = useRef(null);
 
-  // Get user's current location (default to Northampton if unavailable)
   useEffect(() => {
-    (async () => {
-      let { status } = await Location.requestForegroundPermissionsAsync();
-      if (status === 'granted') {
-        try {
-          let location = await Location.getCurrentPositionAsync({});
-          setUserLocation({
-            latitude: location.coords.latitude,
-            longitude: location.coords.longitude,
-          });
-        } catch (error) {
-          // Default to Northampton, UK if location fails
-          setUserLocation({
-            latitude: 52.2405,
-            longitude: -0.9027,
-          });
-        }
-      } else {
-        // Default to Northampton, UK if permission denied
-        setUserLocation({
-          latitude: 52.2405,
-          longitude: -0.9027,
-        });
-      }
-    })();
-  }, []);
-
-  // Fetch jobs assigned to this engineer
-  useEffect(() => {
-    if (!auth.currentUser) {
-      router.replace('/(auth)/login');
-      return;
+    // Build query based on selected filter
+    let q;
+    
+    if (filter === 'pending') {
+      // Show only resolved reports waiting for verification
+      q = query(
+        collection(db, 'reports'),
+        where('status', '==', 'resolved'),
+        orderBy('resolvedAt', 'desc')
+      );
+    } else if (filter === 'verified') {
+      // Show verified reports
+      q = query(
+        collection(db, 'reports'),
+        where('status', '==', 'verified'),
+        orderBy('verifiedAt', 'desc')
+      );
+    } else if (filter === 'reopened') {
+      // Show reopened reports
+      q = query(
+        collection(db, 'reports'),
+        where('status', '==', 'reopened'),
+        orderBy('reopenedAt', 'desc')
+      );
+    } else {
+      // Show all reports that have been resolved at some point
+      q = query(
+        collection(db, 'reports'),
+        orderBy('createdAt', 'desc')
+      );
     }
-
-    // Query reports assigned to this engineer
-    const q = query(
-      collection(db, 'reports'),
-      where('assignedTo', '==', auth.currentUser.uid),
-      orderBy('createdAt', 'desc')
-    );
 
     // Listen to real-time updates
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const allJobs = [];
+      const reportsList = [];
       snapshot.forEach((doc) => {
-        allJobs.push({ id: doc.id, ...doc.data() });
+        const data = { id: doc.id, ...doc.data() };
+        // For 'all' filter, only include reports that have been resolved
+        if (filter === 'all') {
+          if (data.status === 'resolved' || data.status === 'verified' || data.status === 'reopened') {
+            reportsList.push(data);
+          }
+        } else {
+          reportsList.push(data);
+        }
       });
-      
-      // Filter based on selected filter
-      let filteredJobs = allJobs;
-      
-      if (filter === 'active') {
-        // Show assigned, in progress, and reopened jobs
-        filteredJobs = allJobs.filter(
-          (j) => j.status === 'assigned' || j.status === 'in progress' || j.status === 'reopened'
-        );
-      } else if (filter === 'completed') {
-        // Show resolved and verified jobs
-        filteredJobs = allJobs.filter(
-          (j) => j.status === 'resolved' || j.status === 'verified'
-        );
-      }
-      // 'all' filter shows everything
-      
-      setJobs(filteredJobs);
+      setReports(reportsList);
       setLoading(false);
     });
 
@@ -109,9 +89,9 @@ export default function EngineerHome() {
     router.replace('/(auth)/login');
   };
 
-  // Navigate to job detail
-  const handleJobPress = (jobId) => {
-    router.push(`/(engineer)/job-detail/${jobId}`);
+  // Navigate to verification screen
+  const handleReportPress = (reportId) => {
+    router.push(`/(qa)/verify/${reportId}`);
   };
 
   if (loading) {
@@ -126,30 +106,41 @@ export default function EngineerHome() {
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.title}>My Jobs</Text>
+        <Text style={styles.title}>QA Console</Text>
         <Text style={styles.subtitle}>
-          {filter === 'active' ? 'Active Jobs' : filter === 'completed' ? 'Completed Jobs' : 'All Jobs'}
+          {filter === 'pending' ? 'Pending Verification' : 
+           filter === 'verified' ? 'Verified Reports' :
+           filter === 'reopened' ? 'Reopened Reports' : 'All Reports'}
         </Text>
-        <Text style={styles.count}>{jobs.length} jobs</Text>
+        <Text style={styles.count}>{reports.length} reports</Text>
       </View>
 
       {/* Filter Tabs */}
       <View style={styles.filterContainer}>
         <TouchableOpacity
-          style={[styles.filterTab, filter === 'active' && styles.filterTabActive]}
-          onPress={() => setFilter('active')}
+          style={[styles.filterTab, filter === 'pending' && styles.filterTabActive]}
+          onPress={() => setFilter('pending')}
         >
-          <Text style={[styles.filterText, filter === 'active' && styles.filterTextActive]}>
-            Active
+          <Text style={[styles.filterText, filter === 'pending' && styles.filterTextActive]}>
+            Pending
           </Text>
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[styles.filterTab, filter === 'completed' && styles.filterTabActive]}
-          onPress={() => setFilter('completed')}
+          style={[styles.filterTab, filter === 'verified' && styles.filterTabActive]}
+          onPress={() => setFilter('verified')}
         >
-          <Text style={[styles.filterText, filter === 'completed' && styles.filterTextActive]}>
-            Completed
+          <Text style={[styles.filterText, filter === 'verified' && styles.filterTextActive]}>
+            Verified
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.filterTab, filter === 'reopened' && styles.filterTabActive]}
+          onPress={() => setFilter('reopened')}
+        >
+          <Text style={[styles.filterText, filter === 'reopened' && styles.filterTextActive]}>
+            Reopened
           </Text>
         </TouchableOpacity>
 
@@ -163,28 +154,25 @@ export default function EngineerHome() {
         </TouchableOpacity>
       </View>
 
-      {/* Jobs List */}
-      {jobs.length === 0 ? (
+      {/* Reports List */}
+      {reports.length === 0 ? (
         <View style={styles.empty}>
-          <Text style={styles.emptyText}>No jobs found</Text>
+          <Text style={styles.emptyText}>No reports found</Text>
           <Text style={styles.emptySub}>
-            {filter === 'active'
-              ? 'Your assigned jobs will appear here'
-              : 'No completed jobs yet'}
+            {filter === 'pending'
+              ? 'Resolved reports will appear here for verification'
+              : 'No reports in this category'}
           </Text>
         </View>
       ) : (
         <FlatList
-          data={jobs}
+          data={reports}
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => (
-            <TouchableOpacity onPress={() => handleJobPress(item.id)}>
-              <JobCard 
-                job={item} 
-                showDistance={true} 
-                userLocation={userLocation}
-              />
-            </TouchableOpacity>
+            <ReportCard 
+              report={item} 
+              onPress={handleReportPress}
+            />
           )}
           contentContainerStyle={styles.list}
           showsVerticalScrollIndicator={false}
@@ -252,7 +240,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#4F46E5',
   },
   filterText: {
-    fontSize: 15,
+    fontSize: 13,
     fontWeight: '600',
     color: '#64748b',
   },
