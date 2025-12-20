@@ -1,17 +1,13 @@
-// app/(citizen)/report.js — WITH EXPO-VIDEO (Modern & Recommended)
-import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { VideoView, useVideoPlayer } from 'expo-video';
 import { addDoc, collection, doc, getDoc, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
-  FlatList,
   Image,
   Keyboard,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -22,6 +18,8 @@ import { auth, db, storage } from '../../backend/firebase';
 import CustomButton from '../../components/CustomButton';
 import CustomInput from '../../components/CustomInput';
 import FormMessage from '../../components/FormMessage';
+import { MediaPicker } from '../../components/MediaPicker';
+import ReportHeader from '../../components/ReportHeader';
 
 export default function ReportIssue() {
   const router = useRouter();
@@ -30,8 +28,7 @@ export default function ReportIssue() {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState('');
-  const [photos, setPhotos] = useState([]);
-  const [video, setVideo] = useState(null);
+  const [media, setMedia] = useState([]);
   const [location, setLocation] = useState(null);
   const [address, setAddress] = useState('Getting your location...');
   const [searchText, setSearchText] = useState('');
@@ -44,11 +41,27 @@ export default function ReportIssue() {
   const [initialLoading, setInitialLoading] = useState(!!draftId);
   const isEditMode = !!draftId;
 
-  // Create video player for preview
-  const player = useVideoPlayer(video, (player) => {
-    player.loop = false;
-    player.pause();
-  });
+  // Loads categories from ConfigMD
+  const [categories, setCategories] = useState([]);
+
+  useEffect(() => {
+    const fetchCategories = async () => {
+      try {
+        const docRef = doc(db, 'ConfigMD', 'categories');
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists() && docSnap.data().list) {
+          setCategories(docSnap.data().list);
+        } else {
+          setCategories(['Pothole', 'Streetlight', 'Missed Bin', 'Flooding', 'Graffiti', 'Other']);
+        }
+      } catch (error) {
+        console.error('Error loading categories:', error);
+        setCategories(['Pothole', 'Streetlight', 'Missed Bin', 'Flooding', 'Graffiti', 'Other']);
+      }
+    };
+
+    fetchCategories();
+  }, []);
 
   useEffect(() => {
     const getUserName = async () => {
@@ -69,15 +82,24 @@ export default function ReportIssue() {
           setTitle(data.title || '');
           setDescription(data.description || '');
           setCategory(data.category || '');
-          setPhotos(data.photos || []);
-          setVideo(data.video || null);
+          const loadedMedia = [];
+          if (data.photos && Array.isArray(data.photos)) {
+            data.photos.forEach(uri => loadedMedia.push({ uri, type: 'photo' }));
+          }
+          if (data.videos && Array.isArray(data.videos)) {
+            data.videos.forEach(uri => loadedMedia.push({ uri, type: 'video' }));
+          } else if (data.video) {
+            loadedMedia.push({ uri: data.video, type: 'video' });
+          }
+          setMedia(loadedMedia);
           setAddress(data.address || '');
           setSearchText(data.address || '');
           if (data.location) {
             setLocation({ latitude: data.location.latitude, longitude: data.location.longitude });
           }
         }
-      } catch {
+      } catch (error) {
+        console.error('Load draft error:', error);
         setMessage('Failed to load draft');
         setIsError(true);
       } finally {
@@ -91,19 +113,16 @@ export default function ReportIssue() {
     if (draftId) return;
     const getCurrentLocation = async () => {
       const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') return;
+      if (status !== 'granted') {
+        setAddress('Location permission denied');
+        return;
+      }
       const loc = await Location.getCurrentPositionAsync({});
       setLocation({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
       updateAddress(loc.coords.latitude, loc.coords.longitude);
     };
     getCurrentLocation();
   }, [draftId]);
-
-  useEffect(() => {
-    return () => {
-      if (searchTimeout.current) clearTimeout(searchTimeout.current);
-    };
-  }, []);
 
   const updateAddress = async (lat, lng) => {
     try {
@@ -162,122 +181,23 @@ export default function ReportIssue() {
     }
   };
 
-  const categories = [
-    { id: 'pothole', label: 'Pothole' },
-    { id: 'streetlight', label: 'Streetlight' },
-    { id: 'waste', label: 'Missed Bin' },
-    { id: 'flooding', label: 'Flooding' },
-    { id: 'graffiti', label: 'Graffiti' },
-    { id: 'other', label: 'Other' },
-  ];
-
-  const pickImage = async () => {
-    if (photos.length >= 5) {
-      setMessage('Maximum 5 photos');
-      setIsError(true);
-      return;
-    }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      allowsEditing: true,
-      quality: 0.8,
-    });
-    if (!result.canceled) setPhotos([...photos, result.assets[0].uri]);
+  const handleGalleryPick = async () => {
+    await MediaPicker.pickFromGallery(
+      (newMedia) => setMedia([...media, ...newMedia]),
+      media,
+      5
+    );
   };
 
-  const takePhoto = async () => {
-    if (photos.length >= 5) {
-      setMessage('Maximum 5 photos');
-      setIsError(true);
-      return;
-    }
-    const perm = await ImagePicker.requestCameraPermissionsAsync();
-    if (!perm.granted) {
-      setMessage('Camera permission needed');
-      setIsError(true);
-      return;
-    }
-    const result = await ImagePicker.launchCameraAsync({
-      allowsEditing: true,
-      quality: 0.8,
-    });
-    if (!result.canceled) setPhotos([...photos, result.assets[0].uri]);
+  const handleCameraPick = async () => {
+    await MediaPicker.pickFromCamera(
+      (newMedia) => setMedia([...media, ...newMedia]),
+      media,
+      5
+    );
   };
 
-  const pickVideo = async () => {
-    try {
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['videos'],
-        allowsEditing: true,
-        quality: 0.8,
-        videoMaxDuration: 20,
-      });
-      if (!result.canceled) {
-        const videoAsset = result.assets[0];
-        if (videoAsset.duration && videoAsset.duration > 20000) {
-          Alert.alert('Video Too Long', 'Please select a video under 20 seconds');
-          return;
-        }
-        if (photos.length > 0) {
-          Alert.alert('Switch to Video?', 'This will remove your photos. Continue?', [
-            { text: 'Cancel', style: 'cancel' },
-            {
-              text: 'Continue',
-              onPress: () => {
-                setPhotos([]);
-                setVideo(videoAsset.uri);
-              },
-            },
-          ]);
-        } else {
-          setVideo(videoAsset.uri);
-        }
-      }
-    } catch {
-      setMessage('Failed to pick video');
-      setIsError(true);
-    }
-  };
-
-  const recordVideo = async () => {
-    try {
-      const perm = await ImagePicker.requestCameraPermissionsAsync();
-      if (!perm.granted) {
-        setMessage('Camera permission needed');
-        setIsError(true);
-        return;
-      }
-      const result = await ImagePicker.launchCameraAsync({
-        mediaTypes: ['videos'],
-        allowsEditing: true,
-        quality: 0.8,
-        videoMaxDuration: 20,
-      });
-      if (!result.canceled) {
-        const videoAsset = result.assets[0];
-        if (photos.length > 0) {
-          Alert.alert('Switch to Video?', 'This will remove your photos. Continue?', [
-            { text: 'Cancel', style: 'cancel' },
-            {
-              text: 'Continue',
-              onPress: () => {
-                setPhotos([]);
-                setVideo(videoAsset.uri);
-              },
-            },
-          ]);
-        } else {
-          setVideo(videoAsset.uri);
-        }
-      }
-    } catch {
-      setMessage('Failed to record video');
-      setIsError(true);
-    }
-  };
-
-  const removePhoto = (i) => setPhotos(photos.filter((_, index) => index !== i));
-  const removeVideo = () => setVideo(null);
+  const removeMedia = (index) => setMedia(media.filter((_, i) => i !== index));
 
   const handleSaveDraft = async () => {
     setMessage('');
@@ -289,12 +209,14 @@ export default function ReportIssue() {
     }
     setLoading(true);
     try {
+      const photos = media.filter(m => m.type === 'photo').map(m => m.uri);
+      const videos = media.filter(m => m.type === 'video').map(m => m.uri);
       const draftData = {
         title: title.trim(),
         description: description.trim(),
         category,
         photos,
-        video,
+        videos,
         location,
         address,
         userId: auth.currentUser.uid,
@@ -313,7 +235,8 @@ export default function ReportIssue() {
       }
       setIsError(false);
       setTimeout(() => router.back(), 1500);
-    } catch {
+    } catch (error) {
+      console.error('Save draft error:', error);
       setMessage('Failed to save draft');
       setIsError(true);
     } finally {
@@ -324,19 +247,19 @@ export default function ReportIssue() {
   const handleSubmit = async () => {
     setMessage('');
     setIsError(false);
-    if (!title || !description || !category || !location || (photos.length === 0 && !video)) {
+    if (!title || !description || !category || !location || media.length === 0) {
       setMessage('Please complete all fields and add media');
       setIsError(true);
       return;
     }
-
     setLoading(true);
-
     try {
-      // Upload photos
+      const photoUris = media.filter(m => m.type === 'photo').map(m => m.uri);
+      const videoUris = media.filter(m => m.type === 'video').map(m => m.uri);
+
       const uploadedPhotoUrls = [];
-      for (let uri of photos) {
-        const fileName = `photo_${Date.now()}.jpg`;
+      for (let uri of photoUris) {
+        const fileName = `photo_${Date.now()}_${Math.random().toString(36).substring(7)}.jpg`;
         const storageRef = ref(storage, `images/${auth.currentUser.uid}/${fileName}`);
         const response = await fetch(uri);
         const blob = await response.blob();
@@ -345,15 +268,15 @@ export default function ReportIssue() {
         uploadedPhotoUrls.push(url);
       }
 
-      // Upload video (if present)
-      let uploadedVideoUrl = null;
-      if (video) {
+      const uploadedVideoUrls = [];
+      for (let uri of videoUris) {
         const fileName = `video_${Date.now()}.mp4`;
         const storageRef = ref(storage, `videos/${auth.currentUser.uid}/${fileName}`);
-        const response = await fetch(video);
+        const response = await fetch(uri);
         const blob = await response.blob();
         await uploadBytes(storageRef, blob);
-        uploadedVideoUrl = await getDownloadURL(storageRef);
+        const url = await getDownloadURL(storageRef);
+        uploadedVideoUrls.push(url);
       }
 
       const reportData = {
@@ -361,7 +284,7 @@ export default function ReportIssue() {
         description: description.trim(),
         category,
         photoUrls: uploadedPhotoUrls,
-        videoUrl: uploadedVideoUrl,
+        videoUrls: uploadedVideoUrls,
         location: {
           latitude: location.latitude,
           longitude: location.longitude,
@@ -372,7 +295,6 @@ export default function ReportIssue() {
         status: 'submitted',
         isDraft: false,
         submittedAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
       };
 
       if (isEditMode) {
@@ -383,7 +305,6 @@ export default function ReportIssue() {
         await addDoc(collection(db, 'reports'), reportData);
         setMessage('Report submitted!');
       }
-
       setIsError(false);
       setTimeout(() => router.back(), 1500);
     } catch (error) {
@@ -404,170 +325,152 @@ export default function ReportIssue() {
     );
   }
 
-  const renderContent = () => (
-    <>
-      <View style={styles.header}>
-        <Text style={styles.title}>{isEditMode ? 'Edit Draft' : 'Report an Issue'}</Text>
-        {isEditMode && <Text style={styles.subtitle}>You`re editing a draft</Text>}
-      </View>
-      <View style={styles.form}>
-        <CustomInput label="Title" placeholder="e.g. Large pothole" value={title} onChangeText={setTitle} />
-        <CustomInput label="Description" placeholder="Describe..." value={description} onChangeText={setDescription} multiline numberOfLines={4} />
-        <Text style={styles.label}>Category</Text>
-        <View style={styles.categoryGrid}>
-          {categories.map((cat) => (
-            <TouchableOpacity
-              key={cat.id}
-              style={[styles.categoryCard, category === cat.id && styles.categorySelected]}
-              onPress={() => setCategory(cat.id)}
+  return (
+    <View style={styles.wrapper}>
+      <ReportHeader title={isEditMode ? 'Edit Draft' : 'Report Issue'} />
+
+      <ScrollView contentContainerStyle={styles.container}>
+        <View style={styles.form}>
+          <CustomInput label="Title" placeholder="e.g. Large pothole" value={title} onChangeText={setTitle} />
+          <CustomInput label="Description" placeholder="Describe..." value={description} onChangeText={setDescription} multiline numberOfLines={4} />
+
+          <Text style={styles.label}>Category</Text>
+          <View style={styles.categoryGrid}>
+            {categories.map((cat) => (
+              <TouchableOpacity
+                key={cat}
+                style={[styles.categoryCard, category === cat && styles.categorySelected]}
+                onPress={() => setCategory(cat)}
+              >
+                <Text style={styles.categoryLabel}>{cat}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <Text style={styles.label}>Location</Text>
+          <View style={styles.searchContainer}>
+            <CustomInput
+              style={styles.searchInput}
+              placeholder="Search street, postcode or place..."
+              value={searchText}
+              onChangeText={handleSearchChange}
+              onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
+            />
+            {showSuggestions && suggestions.length > 0 && (
+              <View style={styles.suggestionsBox}>
+                {suggestions.map((item) => (
+                  <TouchableOpacity
+                    key={item.place_id}
+                    style={styles.suggestionItem}
+                    onPress={() => selectPlace(item.place_id, item.description)}
+                  >
+                    <Text style={styles.suggestionText}>{item.description}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+          </View>
+
+          <View style={styles.mapWrapper}>
+            <MapView
+              style={styles.map}
+              region={{
+                latitude: location?.latitude || 52.2405,
+                longitude: location?.longitude || -0.9027,
+                latitudeDelta: 0.008,
+                longitudeDelta: 0.008,
+              }}
+              showsUserLocation
+              showsMyLocationButton
+              followsUserLocation
+              loadingEnabled
             >
-              <Text style={styles.categoryLabel}>{cat.label}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-        <Text style={styles.label}>Location</Text>
-        <View style={styles.searchContainer}>
-          <CustomInput
-            style={styles.searchInput}
-            placeholder="Search street, postcode or place..."
-            value={searchText}
-            onChangeText={handleSearchChange}
-            onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
-          />
-          {showSuggestions && suggestions.length > 0 && (
-            <View style={styles.suggestionsBox}>
-              {suggestions.map((item) => (
-                <TouchableOpacity
-                  key={item.place_id}
-                  style={styles.suggestionItem}
-                  onPress={() => selectPlace(item.place_id, item.description)}
-                >
-                  <Text style={styles.suggestionText}>{item.description}</Text>
-                </TouchableOpacity>
+              {location && (
+                <Marker
+                  draggable
+                  pinColor="#EF4444"
+                  coordinate={{ latitude: location.latitude, longitude: location.longitude }}
+                  onDragEnd={(e) => {
+                    const coord = e.nativeEvent.coordinate;
+                    setLocation(coord);
+                    updateAddress(coord.latitude, coord.longitude);
+                  }}
+                />
+              )}
+            </MapView>
+            <View style={styles.mapOverlay}>
+              <Text style={styles.overlayText}>Drag pin to adjust</Text>
+            </View>
+          </View>
+          <Text style={styles.addressText}>{address}</Text>
+
+          <Text style={styles.label}>Evidence (Required)</Text>
+          <Text style={styles.helperText}>Add any mix of photos & videos (5 items max)</Text>
+
+          <View style={styles.photoButtons}>
+            <CustomButton title="Gallery" onPress={handleGalleryPick} variant="secondary" />
+            <CustomButton title="Camera" onPress={handleCameraPick} variant="secondary" />
+          </View>
+
+          {media.length > 0 && (
+            <View style={styles.photoGrid}>
+              {media.map((item, i) => (
+                <MediaItem
+                  key={i}
+                  item={item}
+                  index={i}
+                  onRemove={removeMedia}
+                />
               ))}
             </View>
           )}
-        </View>
-        <View style={styles.mapWrapper}>
-          <MapView
-            style={styles.map}
-            region={{
-              latitude: location?.latitude || 52.2405,
-              longitude: location?.longitude || -0.9027,
-              latitudeDelta: 0.008,
-              longitudeDelta: 0.008,
-            }}
-            showsUserLocation
-            showsMyLocationButton
-            followsUserLocation
-            loadingEnabled
-          >
-            {location && (
-              <Marker
-                draggable
-                pinColor="#EF4444"
-                coordinate={{ latitude: location.latitude, longitude: location.longitude }}
-                onDragEnd={(e) => {
-                  const coord = e.nativeEvent.coordinate;
-                  setLocation(coord);
-                  updateAddress(coord.latitude, coord.longitude);
-                }}
-              />
-            )}
-          </MapView>
-          <View style={styles.mapOverlay}>
-            <Text style={styles.overlayText}>Drag pin to adjust</Text>
-          </View>
-        </View>
-        <Text style={styles.addressText}>{address}</Text>
-        <Text style={styles.label}>Evidence (Required)</Text>
-        <Text style={styles.helperText}>Upload photos (1-5) OR one video (max 20 sec)</Text>
-        <View style={styles.photoButtons}>
-          <TouchableOpacity style={styles.photoBtn} onPress={pickImage}>
-            <Text style={styles.photoBtnText}>Gallery</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.photoBtn} onPress={takePhoto}>
-            <Text style={styles.photoBtnText}>Camera</Text>
-          </TouchableOpacity>
-        </View>
-        {photos.length === 0 && !video && (
-          <View style={styles.photoButtons}>
-            <TouchableOpacity style={styles.videoBtn} onPress={pickVideo}>
-              <Text style={styles.videoBtnText}>Video Gallery</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.videoBtn} onPress={recordVideo}>
-              <Text style={styles.videoBtnText}>Record Video</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-        {photos.length > 0 && (
-          <View style={styles.photoGrid}>
-            {photos.map((uri, i) => (
-              <View key={i} style={styles.photoBox}>
-                <Image source={{ uri }} style={styles.photo} />
-                <TouchableOpacity style={styles.remove} onPress={() => removePhoto(i)}>
-                  <Text style={styles.removeText}>×</Text>
-                </TouchableOpacity>
+          {media.length > 0 && <Text style={styles.photoCount}>{media.length} / 5 media items</Text>}
+
+          <FormMessage message={message} isError={isError} />
+
+          {loading ? (
+            <ActivityIndicator size="large" color="#4F46E5" style={{ marginVertical: 20 }} />
+          ) : (
+            <>
+              <CustomButton title={isEditMode ? 'Update Draft' : 'Save as Draft'} onPress={handleSaveDraft} variant="primary" />
+              <View style={{ marginTop: 10 }}>
+                <CustomButton title="Submit Report" onPress={handleSubmit} variant="secondary" />
               </View>
-            ))}
-          </View>
-        )}
-
-        {/* VIDEO GRID - USING EXPO-VIDEO (MODERN) */}
-        {video && (
-          <View style={styles.photoGrid}>
-            <View style={styles.photoBox}>
-              <VideoView
-                player={player}
-                style={styles.photo}
-                fullscreenOptions
-                allowsPictureInPicture
-                contentFit="cover"
-              />
-              <TouchableOpacity style={styles.remove} onPress={removeVideo}>
-                <Text style={styles.removeText}>×</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
-        {photos.length > 0 && <Text style={styles.photoCount}>{photos.length} / 5 photos</Text>}
-        {video && <Text style={styles.photoCount}>1 video (max 20 sec)</Text>}
-        <FormMessage message={message} isError={isError} />
-        {loading ? (
-          <ActivityIndicator size="large" color="#4F46E5" style={{ marginVertical: 20 }} />
-        ) : (
-          <>
-            <CustomButton title={isEditMode ? 'Update Draft' : 'Save as Draft'} onPress={handleSaveDraft} variant="primary" />
-            <View style={{ marginTop: 10 }}>
-              <CustomButton title="Submit Report" onPress={handleSubmit} variant="secondary" />
-            </View>
-            <View style={{ marginTop: 10 }}>
-              <CustomButton title="Cancel" onPress={() => router.back()} variant="danger" />
-            </View>
-          </>
-        )}
-      </View>
-    </>
+              <View style={{ marginTop: 10 }}>
+                <CustomButton title="Cancel" onPress={() => router.back()} variant="danger" />
+              </View>
+            </>
+          )}
+        </View>
+      </ScrollView>
+    </View>
   );
+}
 
+// Media item preview
+function MediaItem({ item, index, onRemove }) {
   return (
-    <FlatList
-      data={[{ key: 'content' }]}
-      renderItem={renderContent}
-      keyboardShouldPersistTaps="handled"
-      showsVerticalScrollIndicator={false}
-      contentContainerStyle={styles.container}
-    />
+    <View style={styles.photoBox}>
+      {item.type === 'photo' ? (
+        <Image source={{ uri: item.uri }} style={styles.photo} />
+      ) : (
+        <View style={[styles.photo, { justifyContent: 'center', alignItems: 'center', backgroundColor: '#000' }]}>
+          <Text style={{ color: '#fff', fontSize: 32 }}>▶</Text>
+          <Text style={{ color: '#fff', fontSize: 12 }}>VIDEO</Text>
+        </View>
+      )}
+      <TouchableOpacity style={styles.remove} onPress={() => onRemove(index)}>
+        <Text style={styles.removeText}>×</Text>
+      </TouchableOpacity>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flexGrow: 1, backgroundColor: '#f5f5f5' },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f5f5f5' },
+  wrapper: { flex: 1, backgroundColor: '#fff' },
+  container: { flexGrow: 1 },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   loadingText: { marginTop: 10, fontSize: 16, color: '#666' },
-  header: { alignItems: 'center', paddingVertical: 20, backgroundColor: '#fff' },
-  title: { fontSize: 24, fontWeight: 'bold', color: '#333' },
-  subtitle: { fontSize: 14, color: '#4F46E5', marginTop: 4, fontWeight: '600' },
   form: { padding: 20 },
   label: { fontSize: 15, fontWeight: '600', color: '#333', marginTop: 24, marginBottom: 8 },
   helperText: { fontSize: 13, color: '#666', marginBottom: 12, fontStyle: 'italic' },
@@ -641,10 +544,23 @@ const styles = StyleSheet.create({
   },
   addressText: { fontSize: 15, color: '#333', textAlign: 'center', marginBottom: 20, fontWeight: '500' },
   photoButtons: { flexDirection: 'row', gap: 12, marginBottom: 15 },
-  photoBtn: { flex: 1, backgroundColor: '#2563EB', padding: 14, borderRadius: 12, alignItems: 'center' },
-  photoBtnText: { color: '#fff', fontWeight: '600', fontSize: 15 },
-  videoBtn: { flex: 1, backgroundColor: '#8B5CF6', padding: 14, borderRadius: 12, alignItems: 'center' },
-  videoBtnText: { color: '#fff', fontWeight: '600', fontSize: 15 },
+  mediaBtn: {
+    flex: 1,
+    backgroundColor: '#4F46E5',
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  mediaBtnText: {
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 16
+  },
   photoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 10 },
   photoBox: { width: '30%', aspectRatio: 1, position: 'relative' },
   photo: { width: '100%', height: '100%', borderRadius: 12 },

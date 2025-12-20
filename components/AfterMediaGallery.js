@@ -8,10 +8,14 @@ import {
   View,
 } from 'react-native';
 
-export default function AfterMediaGallery({ photos = [], video = null, title = 'After Media', onRemove, showRemove = false }) {
+export default function AfterMediaGallery({ photos = [], videos = [], title = 'After Media', onRemove, showRemove = false }) {
   const media = [];
-  if (video) media.push({ type: 'video', uri: video });
-  if (photos && photos.length > 0) {
+  
+  if (videos && Array.isArray(videos)) {
+    videos.forEach(uri => media.push({ type: 'video', uri }));
+  }
+  
+  if (photos && Array.isArray(photos)) {
     photos.forEach(uri => media.push({ type: 'photo', uri }));
   }
 

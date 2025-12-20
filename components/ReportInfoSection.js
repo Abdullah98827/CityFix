@@ -1,9 +1,8 @@
-// Reusable component for displaying report information
 import { StyleSheet, Text, View } from 'react-native';
 import MapView, { Marker } from 'react-native-maps';
 
 export default function ReportInfoSection({ report }) {
-  // Gets status badge color based on status
+  // Gets status badge colour based on status
   const getStatusColor = (status) => {
     switch (status) {
       case 'submitted':

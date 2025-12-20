@@ -1,5 +1,5 @@
 import { useRouter } from 'expo-router';
-import { collection, deleteDoc, doc, onSnapshot, orderBy, query, where } from 'firebase/firestore'; // ADDED deleteDoc, doc
+import { collection, deleteDoc, doc, onSnapshot, orderBy, query, where } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -12,13 +12,14 @@ import {
 } from 'react-native';
 import { auth, db } from '../../backend/firebase';
 import ReportCard from '../../components/ReportCard';
+import ReportHeader from '../../components/ReportHeader';
 
 export default function MyReports() {
   const router = useRouter();
-  const [drafts, setDrafts] = useState([]); 
-  const [submittedReports, setSubmittedReports] = useState([]); 
+  const [drafts, setDrafts] = useState([]);
+  const [submittedReports, setSubmittedReports] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('submitted'); 
+  const [activeTab, setActiveTab] = useState('submitted');
 
   useEffect(() => {
     if (!auth.currentUser) {
@@ -26,7 +27,6 @@ export default function MyReports() {
       return;
     }
 
-    // Query for Drafts
     const draftsQuery = query(
       collection(db, 'reports'),
       where('userId', '==', auth.currentUser.uid),
@@ -34,7 +34,6 @@ export default function MyReports() {
       orderBy('updatedAt', 'desc')
     );
 
-    //Query for Submitted reports
     const submittedQuery = query(
       collection(db, 'reports'),
       where('userId', '==', auth.currentUser.uid),
@@ -45,7 +44,13 @@ export default function MyReports() {
     const unsubscribeDrafts = onSnapshot(draftsQuery, (snapshot) => {
       const draftsList = [];
       snapshot.forEach((doc) => {
-        draftsList.push({ id: doc.id, ...doc.data() });
+        const data = doc.data();
+        draftsList.push({
+          id: doc.id,
+          ...data,
+          photoUrls: data.photoUrls || data.photos || [],
+          videoUrls: data.videoUrls || (data.video ? [data.video] : (data.videos || [])),
+        });
       });
       setDrafts(draftsList);
     });
@@ -53,7 +58,13 @@ export default function MyReports() {
     const unsubscribeSubmitted = onSnapshot(submittedQuery, (snapshot) => {
       const reportsList = [];
       snapshot.forEach((doc) => {
-        reportsList.push({ id: doc.id, ...doc.data() });
+        const data = doc.data();
+        reportsList.push({
+          id: doc.id,
+          ...data,
+          photoUrls: data.photoUrls || data.photos || [],
+          videoUrls: data.videoUrls || (data.video ? [data.video] : (data.videos || [])),
+        });
       });
       setSubmittedReports(reportsList);
       setLoading(false);
@@ -63,7 +74,7 @@ export default function MyReports() {
       unsubscribeDrafts();
       unsubscribeSubmitted();
     };
-  }, []);
+  }, [router]);
 
   const handleDeleteDraft = (draftId, title) => {
     Alert.alert(
@@ -75,12 +86,8 @@ export default function MyReports() {
           text: 'Delete',
           style: 'destructive',
           onPress: async () => {
-            try {
-              await deleteDoc(doc(db, 'reports', draftId));
-              Alert.alert('Success', 'Draft deleted successfully');
-            } catch {
-              Alert.alert('Error', 'Failed to delete draft');
-            }
+            await deleteDoc(doc(db, 'reports', draftId));
+            Alert.alert('Success', 'Draft deleted successfully');
           },
         },
       ]
@@ -96,8 +103,8 @@ export default function MyReports() {
   }
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.header}>My Reports</Text>
+    <View style={styles.wrapper}>
+      <ReportHeader title="My Reports" />
 
       <View style={styles.tabContainer}>
         <TouchableOpacity
@@ -108,7 +115,6 @@ export default function MyReports() {
             Submitted ({submittedReports.length})
           </Text>
         </TouchableOpacity>
-
         <TouchableOpacity
           style={[styles.tab, activeTab === 'drafts' && styles.tabActive]}
           onPress={() => setActiveTab('drafts')}
@@ -119,7 +125,6 @@ export default function MyReports() {
         </TouchableOpacity>
       </View>
 
-      {/* Shows Submitted Reports */}
       {activeTab === 'submitted' && (
         <>
           {submittedReports.length === 0 ? (
@@ -141,7 +146,6 @@ export default function MyReports() {
         </>
       )}
 
-      {/* Shows Drafts */}
       {activeTab === 'drafts' && (
         <>
           {drafts.length === 0 ? (
@@ -164,7 +168,6 @@ export default function MyReports() {
                       <Text style={styles.draftCategory}>{item.category}</Text>
                     )}
                   </View>
-
                   <View style={styles.draftActions}>
                     <TouchableOpacity
                       style={styles.editBtn}
@@ -172,7 +175,6 @@ export default function MyReports() {
                     >
                       <Text style={styles.editBtnText}>Edit</Text>
                     </TouchableOpacity>
-
                     <TouchableOpacity
                       style={styles.deleteBtn}
                       onPress={() => handleDeleteDraft(item.id, item.title)}
@@ -193,26 +195,8 @@ export default function MyReports() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f8f9fa' },
-  center: { 
-    flex: 1, 
-    justifyContent: 'center', 
-    alignItems: 'center', 
-    backgroundColor: '#f8f9fa' 
-  },
-  header: {
-    fontSize: 32,
-    fontWeight: '800',
-    color: '#1e293b',
-    paddingVertical: 24,
-    backgroundColor: '#fff',
-    textAlign: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 4,
-    elevation: 4,
-  },
+  wrapper: { flex: 1, backgroundColor: '#f8f9fa' },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   tabContainer: {
     flexDirection: 'row',
     backgroundColor: '#fff',
@@ -239,22 +223,22 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
   list: { padding: 16 },
-  empty: { 
-    flex: 1, 
-    justifyContent: 'center', 
-    alignItems: 'center', 
-    padding: 20 
+  empty: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
   },
-  emptyText: { 
-    fontSize: 20, 
-    color: '#64748b', 
-    marginBottom: 8, 
-    fontWeight: '600' 
+  emptyText: {
+    fontSize: 20,
+    color: '#64748b',
+    marginBottom: 8,
+    fontWeight: '600',
   },
-  emptySub: { 
-    fontSize: 15, 
-    color: '#94a3b8', 
-    textAlign: 'center' 
+  emptySub: {
+    fontSize: 15,
+    color: '#94a3b8',
+    textAlign: 'center',
   },
   draftCard: {
     backgroundColor: '#fff',

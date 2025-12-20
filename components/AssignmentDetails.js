@@ -1,5 +1,3 @@
-// components/AssignmentDetails.js
-// Reusable component for displaying assignment information
 import { StyleSheet, Text, View } from 'react-native';
 
 export default function AssignmentDetails({ report }) {

@@ -25,21 +25,19 @@ import FormMessage from '../../../components/FormMessage';
 import MediaGallery from '../../../components/MediaGallery';
 import ReportHeader from '../../../components/ReportHeader';
 import ReportInfoSection from '../../../components/ReportInfoSection';
+import StatusTracker from '../../../components/StatusTracker';
 
 export default function DispatcherReportDetail() {
   const { id } = useLocalSearchParams();
   const router = useRouter();
-
   const [report, setReport] = useState(null);
   const [engineers, setEngineers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-
   const [selectedEngineer, setSelectedEngineer] = useState('');
   const [priority, setPriority] = useState('medium');
   const [deadline, setDeadline] = useState('');
   const [notes, setNotes] = useState('');
-
   const [message, setMessage] = useState('');
   const [isError, setIsError] = useState(false);
 
@@ -69,20 +67,17 @@ export default function DispatcherReportDetail() {
         setLoading(false);
       }
     };
-
     fetchData();
   }, [id]);
 
   const handleAssign = async () => {
     setMessage('');
     setIsError(false);
-
     if (!selectedEngineer) {
       setMessage('Please select an engineer');
       setIsError(true);
       return;
     }
-
     if (!deadline) {
       setMessage('Please set a deadline');
       setIsError(true);
@@ -108,10 +103,8 @@ export default function DispatcherReportDetail() {
                 dispatcherNotes: notes,
                 assignedAt: new Date(),
               });
-
               setMessage('Report assigned successfully!');
               setIsError(false);
-
               setTimeout(() => {
                 router.back();
               }, 1500);
@@ -148,14 +141,16 @@ export default function DispatcherReportDetail() {
     <View style={styles.wrapper}>
       <ReportHeader title="Report Details" />
 
-      <ScrollView style={styles.container}>
-        {/* BEFORE Media (Photos OR Video) */}
-        <MediaGallery photos={report.photos} video={report.video} />
+      {!report.isDraft && <StatusTracker status={report.status} />}
 
-        {/* Report Info */}
+      <ScrollView style={styles.container}>
+        <MediaGallery
+          photos={report.photoUrls || report.photos || []}
+          videos={report.videoUrls || []}
+        />
+
         <ReportInfoSection report={report} />
 
-        {/* Work Order Assignment Section */}
         {report.status === 'submitted' && (
           <View style={styles.workOrderSection}>
             <Text style={styles.sectionTitle}>Create Work Order</Text>
@@ -228,7 +223,6 @@ export default function DispatcherReportDetail() {
           </View>
         )}
 
-        {/* If already assigned */}
         {report.status !== 'submitted' && (
           <View style={styles.assignedInfo}>
             <Text style={styles.sectionTitle}>Assignment Details</Text>
@@ -254,6 +248,8 @@ export default function DispatcherReportDetail() {
             </View>
           </View>
         )}
+
+        <View style={{ height: 40 }} />
       </ScrollView>
     </View>
   );

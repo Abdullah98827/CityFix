@@ -1,13 +1,6 @@
-// components/FormMessage.js
 import { StyleSheet, Text } from 'react-native';
 
-/**
- * Reusable message component for forms
- * Shows green text on success, red text on error
- * Used in register.js, login.js, report.js etc.
- */
 export default function FormMessage({ message, isError = false }) {
-  // If no message, show nothing
   if (!message) return null;
 
   return (

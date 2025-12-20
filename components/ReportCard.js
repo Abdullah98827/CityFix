@@ -1,4 +1,3 @@
-// components/ReportCard.js - Fixed to support custom navigation
 import { useRouter } from 'expo-router';
 import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
@@ -17,7 +16,6 @@ export default function ReportCard({ report, onPress }) {
     }
   };
 
-  // Default navigation if no custom onPress provided
   const handlePress = () => {
     if (onPress) {
       onPress(report.id);
@@ -26,18 +24,26 @@ export default function ReportCard({ report, onPress }) {
     }
   };
 
-  const firstPhoto = report.photos?.[0];
+  const photoUrls = report.photoUrls || report.photos || [];
+  const videoUrls = report.videoUrls || (report.video ? [report.video] : (report.videos || []));
+  
+  const firstPhoto = photoUrls[0];
+  const hasVideo = videoUrls.length > 0;
 
   return (
-    <TouchableOpacity
-      style={styles.card}
-      onPress={handlePress}
-    >
+    <TouchableOpacity style={styles.card} onPress={handlePress}>
       {firstPhoto ? (
         <Image source={{ uri: firstPhoto }} style={styles.photo} />
+      ) : hasVideo ? (
+        <View style={styles.videoThumbnail}>
+          <View style={styles.playIcon}>
+            <Text style={styles.playText}>▶</Text>
+          </View>
+          <Text style={styles.videoLabel}>VIDEO</Text>
+        </View>
       ) : (
         <View style={styles.noPhoto}>
-          <Text style={styles.noPhotoText}>No photo</Text>
+          <Text style={styles.noPhotoText}>No media</Text>
         </View>
       )}
 
@@ -75,14 +81,70 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
   },
   photo: { width: '100%', height: 220 },
-  noPhoto: { width: '100%', height: 220, backgroundColor: '#f1f5f9', justifyContent: 'center', alignItems: 'center' },
+  videoThumbnail: {
+    width: '100%',
+    height: 220,
+    backgroundColor: '#000',
+    justifyContent: 'center',
+    alignItems: 'center',
+    position: 'relative',
+  },
+  playIcon: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: 'rgba(255,255,255,0.9)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  playText: {
+    fontSize: 24,
+    color: '#4F46E5',
+    marginLeft: 4,
+  },
+  videoLabel: {
+    position: 'absolute',
+    top: 12,
+    left: 12,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  noPhoto: { 
+    width: '100%', 
+    height: 220, 
+    backgroundColor: '#f1f5f9', 
+    justifyContent: 'center', 
+    alignItems: 'center' 
+  },
   noPhotoText: { color: '#94a3b8', fontSize: 16 },
   info: { padding: 18 },
   title: { fontSize: 19, fontWeight: '700', color: '#1e293b', marginBottom: 6 },
-  category: { fontSize: 15, color: '#4F46E5', fontWeight: '700', marginBottom: 10, textTransform: 'capitalize' },
-  bottomRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  category: { 
+    fontSize: 15, 
+    color: '#4F46E5', 
+    fontWeight: '700', 
+    marginBottom: 10, 
+    textTransform: 'capitalize' 
+  },
+  bottomRow: { 
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    alignItems: 'center', 
+    marginBottom: 8 
+  },
   address: { fontSize: 14.5, color: '#475569', flex: 1, fontWeight: '500' },
-  statusBadge: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 25, minWidth: 90, alignItems: 'center' },
-  statusText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  statusBadge: { 
+    paddingHorizontal: 16, 
+    paddingVertical: 8, 
+    borderRadius: 25, 
+    minWidth: 90, 
+    alignItems: 'center' 
+  },
+  statusText: { color: '#fff', fontSize: 13, fontWeight: '700', textTransform: 'uppercase' },
   date: { fontSize: 13, color: '#94a3b8', fontWeight: '500' },
 });

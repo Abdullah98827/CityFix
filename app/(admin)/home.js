@@ -1,77 +1,141 @@
-// app/(admin)/home.js — Updated with proper cleanup
 import { useRouter } from 'expo-router';
 import { collection, doc, onSnapshot, updateDoc } from 'firebase/firestore';
 import { useEffect, useRef, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    FlatList,
-    Modal,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { db } from '../../backend/firebase';
-import CustomButton from '../../components/CustomButton';
-import SignOutButton from '../../components/SignOutButton';
+import AppHeader from '../../components/AppHeader';
 
 export default function AdminHome() {
-  const router = useRouter(); // Add router for navigation
-  
-  // State for storing user data from Firestore
+  const router = useRouter();
   const [users, setUsers] = useState([]);
+  const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [modalVisible, setModalVisible] = useState(false);
-  const [selectedUser, setSelectedUser] = useState(null);
-  
-  // useRef stores the unsubscribe function so we can call it later
-  // This persists across re-renders without causing re-renders
-  const unsubscribeRef = useRef(null);
+  const [activeTab, setActiveTab] = useState('users');
+  const unsubscribeUsersRef = useRef(null);
+  const unsubscribeCategoriesRef = useRef(null);
 
   useEffect(() => {
-    // Set up real-time listener to Firestore
-    const unsubscribe = onSnapshot(collection(db, 'UserMD'), (snapshot) => {
+    // Loads all the users
+    const unsubscribeUsers = onSnapshot(collection(db, 'UserMD'), (snapshot) => {
       const list = [];
       snapshot.forEach((doc) => list.push({ id: doc.id, ...doc.data() }));
       setUsers(list);
-      setLoading(false);
     });
-    
-    // Store the unsubscribe function in the ref
-    // We'll use this to clean up before signing out
-    unsubscribeRef.current = unsubscribe;
-    
-    // Cleanup function - runs when component unmounts
-    return () => unsubscribe();
-  }, []);
+    unsubscribeUsersRef.current = unsubscribeUsers;
 
-  const openModal = (user) => {
-    // Prevent changing admin roles
+    // Loads all the categories
+    const unsubscribeCategories = onSnapshot(doc(db, 'ConfigMD', 'categories'), (docSnap) => {
+      if (docSnap.exists() && docSnap.data().list) {
+        setCategories(docSnap.data().list);
+      } else {
+        setCategories(['Pothole', 'Streetlight', 'Missed Bin', 'Flooding', 'Graffiti', 'Other']);
+      }
+    });
+    unsubscribeCategoriesRef.current = unsubscribeCategories;
+
+    setLoading(false);
+
+    return () => {
+      unsubscribeUsers();
+      unsubscribeCategories();
+    };
+  }, [router]);
+
+  const openUserOptions = (user) => {
     if (user.role === 'admin') {
       Alert.alert("Blocked", "Admins cannot be changed");
       return;
     }
-    setSelectedUser(user);
-    setModalVisible(true);
+
+    Alert.alert(
+      `${user.name || user.email}`,
+      "Choose an action",
+      [
+        {
+          text: "Change Role",
+          onPress: () => changeRole(user),
+        },
+        {
+          text: user.isDisabled ? "Enable Account" : "Disable Account",
+          style: user.isDisabled ? "default" : "destructive",
+          onPress: () => toggleDisable(user),
+        },
+        { text: "Cancel", style: "cancel" },
+      ]
+    );
   };
 
-  const changeRole = async (role) => {
-    // Update the user's role in Firestore
-    await updateDoc(doc(db, 'UserMD', selectedUser.id), { role });
-    setModalVisible(false);
-    Alert.alert("Success", "Role updated!");
+  const changeRole = (user) => {
+    Alert.alert(
+      "Change Role",
+      `Select new role for ${user.name || user.email}`,
+      [
+        { text: "Citizen", onPress: () => updateRole(user.id, 'citizen') },
+        { text: "Dispatcher", onPress: () => updateRole(user.id, 'dispatcher') },
+        { text: "Engineer", onPress: () => updateRole(user.id, 'engineer') },
+        { text: "QA", onPress: () => updateRole(user.id, 'qa') },
+        { text: "Cancel", style: "cancel" },
+      ]
+    );
   };
 
-  // This function cleans up the Firestore listener AND navigates to login
-  // It gets called by SignOutButton BEFORE signing out
-  const handleCleanupBeforeSignOut = () => {
-    if (unsubscribeRef.current) {
-      unsubscribeRef.current(); // Stop listening to Firestore
-      unsubscribeRef.current = null; // Clear the reference
-    }
-    // Navigate to login page after cleanup
-    router.replace('/(auth)/login');
+  const updateRole = async (userId, role) => {
+    await updateDoc(doc(db, 'UserMD', userId), { role });
+    Alert.alert("Success", "Role updated");
+  };
+
+  const toggleDisable = async (user) => {
+    await updateDoc(doc(db, 'UserMD', user.id), { isDisabled: !user.isDisabled });
+    Alert.alert("Success", `Account ${user.isDisabled ? "enabled" : "disabled"}`);
+  };
+
+  const addCategory = async () => {
+    Alert.prompt(
+      "Add Category",
+      "Enter new category name",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Add",
+          onPress: async (text) => {
+            if (text && text.trim()) {
+              const newList = [...categories, text.trim()];
+              await updateDoc(doc(db, 'ConfigMD', 'categories'), { list: newList });
+              Alert.alert("Success", "Category added");
+            }
+          },
+        },
+      ],
+      "plain-text"
+    );
+  };
+
+  const removeCategory = (index) => {
+    Alert.alert(
+      "Remove Category",
+      "Are you sure?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Remove",
+          style: "destructive",
+          onPress: async () => {
+            const newList = categories.filter((_, i) => i !== index);
+            await updateDoc(doc(db, 'ConfigMD', 'categories'), { list: newList });
+            Alert.alert("Success", "Category removed");
+          },
+        },
+      ]
+    );
   };
 
   const UserRow = ({ item }) => (
@@ -80,22 +144,26 @@ export default function AdminHome() {
       <View style={styles.info}>
         <Text style={styles.name}>{item.name || 'No name'}</Text>
         <Text style={styles.email}>{item.email}</Text>
-        <View style={styles.roleTag}>
-          <Text style={styles.roleText}>{item.role || 'citizen'}</Text>
+        <View style={styles.tagRow}>
+          <View style={styles.roleTag}>
+            <Text style={styles.roleText}>{item.role || 'citizen'}</Text>
+          </View>
+          {item.isDisabled && (
+            <View style={styles.disabledTag}>
+              <Text style={styles.disabledText}>DISABLED</Text>
+            </View>
+          )}
         </View>
       </View>
 
       {item.role !== 'admin' && (
-        <CustomButton
-          title="Change Role"
-          onPress={() => openModal(item)}
-          variant="secondary"
-        />
+        <TouchableOpacity onPress={() => openUserOptions(item)} style={styles.dots}>
+          <Text style={styles.dotsText}>⋮</Text>
+        </TouchableOpacity>
       )}
     </View>
   );
 
-  // Show loading spinner while fetching data
   if (loading) {
     return (
       <View style={styles.center}>
@@ -106,48 +174,62 @@ export default function AdminHome() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Admin Panel</Text>
-        <Text style={styles.subtitle}>{users.length} users</Text>
+      <AppHeader title="Admin Panel" showBack={false} showSignOut={true} />
+
+      <View style={styles.tabContainer}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          <TouchableOpacity
+            style={[styles.tab, activeTab === 'users' && styles.tabActive]}
+            onPress={() => setActiveTab('users')}
+          >
+            <Text style={[styles.tabText, activeTab === 'users' && styles.tabTextActive]}>
+              Users ({users.length})
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.tab, activeTab === 'categories' && styles.tabActive]}
+            onPress={() => setActiveTab('categories')}
+          >
+            <Text style={[styles.tabText, activeTab === 'categories' && styles.tabTextActive]}>
+              Categories ({categories.length})
+            </Text>
+          </TouchableOpacity>
+        </ScrollView>
       </View>
 
-      <FlatList
-        data={users}
-        keyExtractor={(item) => item.id}
-        renderItem={UserRow}
-        contentContainerStyle={styles.list}
-      />
+      {activeTab === 'users' && (
+        <FlatList
+          data={users}
+          keyExtractor={(item) => item.id}
+          renderItem={UserRow}
+          contentContainerStyle={styles.list}
+        />
+      )}
 
-      <View style={styles.footer}>
-        {/* Pass the cleanup function to SignOutButton */}
-        <SignOutButton onBeforeSignOut={handleCleanupBeforeSignOut} />
-      </View>
-
-      <Modal visible={modalVisible} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modal}>
-            <Text style={styles.modalTitle}>Change Role</Text>
-            <Text style={styles.modalUser}>{selectedUser?.name || selectedUser?.email}</Text>
-
-            {['citizen', 'dispatcher', 'engineer', 'qa'].map((role) => (
-              <TouchableOpacity
-                key={role}
-                style={styles.roleOption}
-                onPress={() => changeRole(role)}
-              >
-                <Text style={styles.roleOptionText}>{role.toUpperCase()}</Text>
-              </TouchableOpacity>
-            ))}
-
-            <TouchableOpacity
-              style={styles.cancelBtn}
-              onPress={() => setModalVisible(false)}
-            >
-              <Text style={styles.cancelText}>Cancel</Text>
+      {activeTab === 'categories' && (
+        <ScrollView contentContainerStyle={styles.categoriesContainer}>
+          <View style={styles.categoriesHeader}>
+            <Text style={styles.categoriesTitle}>Manage Categories</Text>
+            <TouchableOpacity style={styles.addBtn} onPress={addCategory}>
+              <Text style={styles.addBtnText}>+ Add</Text>
             </TouchableOpacity>
           </View>
-        </View>
-      </Modal>
+
+          {categories.length === 0 ? (
+            <Text style={styles.emptyText}>No categories</Text>
+          ) : (
+            categories.map((cat, index) => (
+              <View key={index} style={styles.categoryItem}>
+                <Text style={styles.categoryText}>{cat}</Text>
+                <TouchableOpacity onPress={() => removeCategory(index)}>
+                  <Text style={styles.removeText}>Remove</Text>
+                </TouchableOpacity>
+              </View>
+            ))
+          )}
+        </ScrollView>
+      )}
     </View>
   );
 }
@@ -155,83 +237,99 @@ export default function AdminHome() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f8fafc' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  header: {
-    backgroundColor: '#4F46E5',
-    paddingTop: 60,
-    paddingBottom: 30,
-    alignItems: 'center',
+  tabContainer: {
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    backgroundColor: '#fff',
   },
-  title: { fontSize: 34, fontWeight: '900', color: '#fff' },
-  subtitle: { fontSize: 16, color: '#e0e7ff', marginTop: 8 },
+  tab: {
+    paddingHorizontal: 24,
+    paddingVertical: 16,
+    borderRadius: 30,
+    backgroundColor: '#f1f5f9',
+    marginRight: 12,
+  },
+  tabActive: {
+    backgroundColor: '#4F46E5',
+  },
+  tabText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#64748b',
+  },
+  tabTextActive: {
+    color: '#fff',
+  },
   list: { padding: 16 },
   card: {
     backgroundColor: '#fff',
-    borderRadius: 20,
-    padding: 24,
+    borderRadius: 16,
+    padding: 16,
     marginBottom: 16,
     flexDirection: 'row',
     alignItems: 'center',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.12,
-    shadowRadius: 12,
-    elevation: 10,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 6,
   },
   avatar: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     backgroundColor: '#e0e7ff',
-    marginRight: 20,
+    marginRight: 16,
   },
   info: { flex: 1 },
-  name: { fontSize: 20, fontWeight: '700', color: '#1e293b' },
-  email: { fontSize: 15, color: '#64748b', marginTop: 4 },
+  name: { fontSize: 18, fontWeight: '700', color: '#1e293b' },
+  email: { fontSize: 14, color: '#64748b', marginTop: 4 },
+  tagRow: { flexDirection: 'row', marginTop: 8, gap: 8 },
   roleTag: {
-    marginTop: 12,
-    alignSelf: 'flex-start',
     backgroundColor: '#eef2ff',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  roleText: { color: '#4F46E5', fontWeight: 'bold', fontSize: 12 },
+  disabledTag: {
+    backgroundColor: '#fee2e2',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  disabledText: { color: '#991b1b', fontWeight: 'bold', fontSize: 12 },
+  dots: {
+    padding: 8,
+  },
+  dotsText: { fontSize: 24, color: '#64748b' },
+  categoriesContainer: { padding: 16 },
+  categoriesHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  categoriesTitle: { fontSize: 20, fontWeight: '700', color: '#1e293b' },
+  addBtn: {
+    backgroundColor: '#4F46E5',
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 20,
   },
-  roleText: { color: '#4F46E5', fontWeight: 'bold', fontSize: 14 },
-  footer: { padding: 20 },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    justifyContent: 'center',
+  addBtnText: { color: '#fff', fontWeight: '600' },
+  categoryItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-  },
-  modal: {
+    padding: 16,
     backgroundColor: '#fff',
-    width: '90%',
-    borderRadius: 24,
-    padding: 32,
-    alignItems: 'center',
-  },
-  modalTitle: { fontSize: 26, fontWeight: 'bold', color: '#1e293b', marginBottom: 12 },
-  modalUser: { fontSize: 20, color: '#4F46E5', marginBottom: 32 },
-  roleOption: {
-    backgroundColor: '#f8fafc',
-    paddingVertical: 18,
-    marginVertical: 8,
-    borderRadius: 16,
-    borderWidth: 2,
+    borderRadius: 12,
+    marginBottom: 12,
+    borderWidth: 1,
     borderColor: '#e2e8f0',
   },
-  roleOptionText: {
-    textAlign: 'center',
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#4F46E5',
-  },
-  cancelBtn: {
-    marginTop: 24,
-    paddingVertical: 14,
-    paddingHorizontal: 32,
-    backgroundColor: '#ef4444',
-    borderRadius: 16,
-  },
-  cancelText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
+  categoryText: { fontSize: 16, color: '#1e293b' },
+  removeText: { color: '#dc2626', fontWeight: '600' },
+  emptyText: { fontSize: 18, color: '#64748b', textAlign: 'center', marginTop: 40 },
 });

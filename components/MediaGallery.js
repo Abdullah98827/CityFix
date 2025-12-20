@@ -1,4 +1,3 @@
-// components/MediaGallery.js — UPDATED WITH REMOVE SUPPORT
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { useState } from 'react';
 import {
@@ -13,7 +12,7 @@ import {
 
 const { width } = Dimensions.get('window');
 
-export default function MediaGallery({ photos = [], video = null, onRemove, showRemove = false }) {
+export default function MediaGallery({ photos = [], videos = [], video = null, onRemove, showRemove = false }) {
   const [currentIndex, setCurrentIndex] = useState(0);
 
   const handleScroll = (event) => {
@@ -23,7 +22,15 @@ export default function MediaGallery({ photos = [], video = null, onRemove, show
   };
 
   const media = [];
-  if (video) media.push({ type: 'video', uri: video });
+  
+  if (videos && Array.isArray(videos) && videos.length > 0) {
+    videos.forEach(uri => media.push({ type: 'video', uri }));
+  }
+  else if (video) {
+    media.push({ type: 'video', uri: video });
+  }
+  
+  // Add photos
   if (photos && photos.length > 0) {
     photos.forEach(uri => media.push({ type: 'photo', uri }));
   }

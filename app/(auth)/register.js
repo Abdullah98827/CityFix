@@ -32,6 +32,7 @@ export default function RegisterScreen() {
       setIsError(true);
       return;
     }
+
     if (password.length < 6) {
       setMessage("Password must be at least 6 characters");
       setIsError(true);
@@ -39,13 +40,10 @@ export default function RegisterScreen() {
     }
 
     setLoading(true);
-
     try {
-      // Step 1: Creates the user with email and password
       const userCredential = await createUserWithEmailAndPassword(auth, email.trim(), password);
       const user = userCredential.user;
 
-      // Step 2: Saves the user data to Firestore (role and name)
       await setDoc(doc(db, "UserMD", user.uid), {
         name: name.trim(),
         email: user.email,
@@ -53,13 +51,7 @@ export default function RegisterScreen() {
         createdAt: serverTimestamp(),
       });
 
-      setMessage("Registration successful! Taking you to login...");
-      setIsError(false);
-
-      // user has a wait to see the success message
-      setTimeout(() => {
-        router.replace("/(auth)/login");
-      }, 1500);
+      router.replace("/(auth)/login");
     } catch (error) {
       setIsError(true);
       if (error.code === "auth/email-already-in-use") {
@@ -144,161 +136,3 @@ const styles = StyleSheet.create({
   },
   link: { color: "#4F46E5", fontWeight: "600" },
 });
-
-
-
-
-// import { useRouter } from "expo-router";
-// import { createUserWithEmailAndPassword } from "firebase/auth";
-// import { addDoc, collection } from "firebase/firestore";
-// import { useState } from "react";
-// import {
-//   ActivityIndicator,
-//   ScrollView,
-//   StyleSheet,
-//   Text,
-//   View,
-// } from "react-native";
-// import { auth, db } from "../../backend/firebase";
-// import CustomButton from "../../components/CustomButton";
-// import CustomInput from "../../components/CustomInput";
-// export default function RegisterScreen() {
-//   const router = useRouter();
-//   const [email, setEmail] = useState("");
-//   const [password, setPassword] = useState("");
-//   const [loading, setLoading] = useState(false);
-//   const [message, setMessage] = useState("");       
-//   const [isError, setIsError] = useState(false);
-//   const [userFullName, setUserFullName] = useState("");
-
-
-//   const handleRegister = async () => {
-//     setMessage("");
-//     setIsError(false);
-
-//     if (!email || !password) {
-//       setMessage("Please fill in all fields");
-//       setIsError(true);
-//       return;
-//     }
-//     if (password.length < 6) {
-//       setMessage("Password must be at least 6 characters");
-//       setIsError(true);
-//       return;
-//     }
-
-//     setLoading(true);
-
-//     try {
-//       const userCredential = await createUserWithEmailAndPassword(auth, email.trim(), password);
-//       const user = userCredential.user;
-//       setMessage("Registration successful! Taking you to login...");
-//       await addDoc(collection(db, "UserMD"), {
-//         FullName: userFullName,
-//         AuthenticaedID: user.uid,
-//       })
-//       setIsError(false);
-
-//       setTimeout(() => {
-//         router.replace("/(auth)/login");
-//       }, 1500);
-//     } catch (error) {
-//       setIsError(true);
-//       if (error.code === "auth/email-already-in-use") {
-//         setMessage("This email is already registered");
-//       } else if (error.code === "auth/invalid-email") {
-//         setMessage("Please enter a valid email address");
-//       } else if (error.code === "auth/weak-password") {
-//         setMessage("Password is too weak (minimum 6 characters)");
-//       } else {
-//         setMessage("Something went wrong. Please try again.");
-//       }
-//     } finally {
-//       setLoading(false);
-//     }
-//   };
-
-//   return (
-//     <ScrollView contentContainerStyle={styles.container}>
-//       <View style={styles.header}>
-//         <Text style={styles.appName}>CityFix</Text>
-//         <Text style={styles.title}>Create your account</Text>
-//       </View>
-
-//       <View style={styles.form}>
-//         <CustomInput
-//           label="Full-Name"
-//           placeholder="Enter your Full Name"
-//           value={userFullName}
-//           onChangeText={setUserFullName}
-//           autoCapitalize="none"
-//         />
-//         <CustomInput
-//           label="Email"
-//           placeholder="Enter your email"
-//           value={email}
-//           onChangeText={setEmail}
-//           keyboardType="email-address"
-//           autoCapitalize="none"
-//         />
-//         <CustomInput
-//           label="Password"
-//           placeholder="Minimum 6 characters"
-//           value={password}
-//           onChangeText={setPassword}
-//           secureTextEntry
-//         />
-
-//         {message ? (
-//           <Text style={[styles.message, isError ? styles.error : styles.success]}>
-//             {message}
-//           </Text>
-//         ) : null}
-
-//         {loading ? (
-//           <ActivityIndicator size="large" color="#4F46E5" style={{ marginVertical: 20 }} />
-//         ) : (
-//           <CustomButton title="Create Account" onPress={handleRegister} variant="secondary" />
-//         )}
-
-//         <Text style={styles.footerText}>
-//           Already have an account?{" "}
-//           <Text
-//             style={styles.link}
-//             onPress={() => router.push("/(auth)/login")}
-//           >
-//             Sign in
-//           </Text>
-//         </Text>
-//       </View>
-//     </ScrollView>
-//   );
-// }
-
-// const styles = StyleSheet.create({
-//   container: {
-//     flexGrow: 1,
-//     backgroundColor: "#f5f5f5",
-//     padding: 24,
-//     justifyContent: "center",
-//   },
-//   header: { alignItems: "center", marginBottom: 40 },
-//   appName: { fontSize: 36, fontWeight: "bold", color: "#4F46E5", marginBottom: 12 },
-//   title: { fontSize: 20, fontWeight: "600", color: "#333" },
-//   form: { width: "100%" },
-//   message: {
-//     textAlign: "center",
-//     marginVertical: 16,
-//     fontSize: 15,
-//     fontWeight: "600",
-//   },
-//   error: { color: "#DC2626" },
-//   success: { color: "#16A34A" },
-//   footerText: {
-//     textAlign: "center",
-//     marginTop: 24,
-//     fontSize: 14,
-//     color: "#666",
-//   },
-//   link: { color: "#4F46E5", fontWeight: "600" },
-// });

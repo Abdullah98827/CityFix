@@ -1,31 +1,28 @@
-// app/(engineer)/home.js - Engineer Dashboard
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import { collection, onSnapshot, orderBy, query, where } from 'firebase/firestore';
 import { useEffect, useRef, useState } from 'react';
 import {
-    ActivityIndicator,
-    FlatList,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  FlatList,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { auth, db } from '../../backend/firebase';
+import AppHeader from '../../components/AppHeader';
 import JobCard from '../../components/JobCard';
-import SignOutButton from '../../components/SignOutButton';
 
 export default function EngineerHome() {
   const router = useRouter();
-  const [jobs, setJobs] = useState([]);
+  const [allJobs, setAllJobs] = useState([]);
+  const [filteredJobs, setFilteredJobs] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState('active'); // 'active', 'completed', 'all'
+  const [filter, setFilter] = useState('active');
   const [userLocation, setUserLocation] = useState(null);
-  
-  // Store unsubscribe function for cleanup before sign out
   const unsubscribeRef = useRef(null);
 
-  // Get user's current location (default to Northampton if unavailable)
   useEffect(() => {
     (async () => {
       let { status } = await Location.requestForegroundPermissionsAsync();
@@ -36,83 +33,63 @@ export default function EngineerHome() {
             latitude: location.coords.latitude,
             longitude: location.coords.longitude,
           });
-        } catch (error) {
-          // Default to Northampton, UK if location fails
-          setUserLocation({
-            latitude: 52.2405,
-            longitude: -0.9027,
-          });
+        } catch {
+          setUserLocation({ latitude: 52.2405, longitude: -0.9027 });
         }
       } else {
-        // Default to Northampton, UK if permission denied
-        setUserLocation({
-          latitude: 52.2405,
-          longitude: -0.9027,
-        });
+        setUserLocation({ latitude: 52.2405, longitude: -0.9027 });
       }
     })();
   }, []);
 
-  // Fetch jobs assigned to this engineer
   useEffect(() => {
     if (!auth.currentUser) {
       router.replace('/(auth)/login');
       return;
     }
 
-    // Query reports assigned to this engineer
     const q = query(
       collection(db, 'reports'),
       where('assignedTo', '==', auth.currentUser.uid),
       orderBy('createdAt', 'desc')
     );
 
-    // Listen to real-time updates
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const allJobs = [];
-      snapshot.forEach((doc) => {
-        allJobs.push({ id: doc.id, ...doc.data() });
-      });
-      
-      // Filter based on selected filter
-      let filteredJobs = allJobs;
-      
+      const jobsList = [];
+      snapshot.forEach((doc) => jobsList.push({ id: doc.id, ...doc.data() }));
+
+      setAllJobs(jobsList);
+
+      let filtered = jobsList;
       if (filter === 'active') {
-        // Show assigned, in progress, and reopened jobs
-        filteredJobs = allJobs.filter(
+        filtered = jobsList.filter(
           (j) => j.status === 'assigned' || j.status === 'in progress' || j.status === 'reopened'
         );
       } else if (filter === 'completed') {
-        // Show resolved and verified jobs
-        filteredJobs = allJobs.filter(
+        filtered = jobsList.filter(
           (j) => j.status === 'resolved' || j.status === 'verified'
         );
       }
-      // 'all' filter shows everything
-      
-      setJobs(filteredJobs);
+
+      setFilteredJobs(filtered);
       setLoading(false);
     });
 
-    // Save unsubscribe function for cleanup
     unsubscribeRef.current = unsubscribe;
-
     return () => unsubscribe();
-  }, [filter]);
+  }, [filter, router]);
 
-  // Cleanup before sign out
-  const handleCleanupBeforeSignOut = () => {
-    if (unsubscribeRef.current) {
-      unsubscribeRef.current();
-      unsubscribeRef.current = null;
-    }
-    router.replace('/(auth)/login');
-  };
-
-  // Navigate to job detail
   const handleJobPress = (jobId) => {
     router.push(`/(engineer)/job-detail/${jobId}`);
   };
+
+  const activeCount = allJobs.filter(
+    (j) => j.status === 'assigned' || j.status === 'in progress' || j.status === 'reopened'
+  ).length;
+  const completedCount = allJobs.filter(
+    (j) => j.status === 'resolved' || j.status === 'verified'
+  ).length;
+  const allCount = allJobs.length;
 
   if (loading) {
     return (
@@ -124,122 +101,67 @@ export default function EngineerHome() {
 
   return (
     <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.title}>My Jobs</Text>
-        <Text style={styles.subtitle}>
-          {filter === 'active' ? 'Active Jobs' : filter === 'completed' ? 'Completed Jobs' : 'All Jobs'}
-        </Text>
-        <Text style={styles.count}>{jobs.length} jobs</Text>
-      </View>
+      <AppHeader title="My Jobs" showBack={false} showSignOut={true} />
 
-      {/* Filter Tabs */}
       <View style={styles.filterContainer}>
         <TouchableOpacity
           style={[styles.filterTab, filter === 'active' && styles.filterTabActive]}
           onPress={() => setFilter('active')}
         >
           <Text style={[styles.filterText, filter === 'active' && styles.filterTextActive]}>
-            Active
+            Active ({activeCount})
           </Text>
         </TouchableOpacity>
-
         <TouchableOpacity
           style={[styles.filterTab, filter === 'completed' && styles.filterTabActive]}
           onPress={() => setFilter('completed')}
         >
           <Text style={[styles.filterText, filter === 'completed' && styles.filterTextActive]}>
-            Completed
+            Completed ({completedCount})
           </Text>
         </TouchableOpacity>
-
         <TouchableOpacity
           style={[styles.filterTab, filter === 'all' && styles.filterTabActive]}
           onPress={() => setFilter('all')}
         >
           <Text style={[styles.filterText, filter === 'all' && styles.filterTextActive]}>
-            All
+            All ({allCount})
           </Text>
         </TouchableOpacity>
       </View>
 
-      {/* Jobs List */}
-      {jobs.length === 0 ? (
+      {filteredJobs.length === 0 ? (
         <View style={styles.empty}>
           <Text style={styles.emptyText}>No jobs found</Text>
           <Text style={styles.emptySub}>
-            {filter === 'active'
-              ? 'Your assigned jobs will appear here'
-              : 'No completed jobs yet'}
+            {filter === 'active' ? 'No active jobs' : 'No completed jobs'}
           </Text>
         </View>
       ) : (
         <FlatList
-          data={jobs}
+          data={filteredJobs}
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => (
             <TouchableOpacity onPress={() => handleJobPress(item.id)}>
-              <JobCard 
-                job={item} 
-                showDistance={true} 
-                userLocation={userLocation}
-              />
+              <JobCard job={item} showDistance={true} userLocation={userLocation} />
             </TouchableOpacity>
           )}
           contentContainerStyle={styles.list}
-          showsVerticalScrollIndicator={false}
         />
       )}
-
-      {/* Sign Out Button */}
-      <View style={styles.footer}>
-        <SignOutButton onBeforeSignOut={handleCleanupBeforeSignOut} />
-      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f8fafc' },
-  center: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#f8fafc',
-  },
-  header: {
-    backgroundColor: '#4F46E5',
-    paddingTop: 60,
-    paddingBottom: 24,
-    alignItems: 'center',
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: '900',
-    color: '#fff',
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 18,
-    color: '#e0e7ff',
-    fontWeight: '600',
-  },
-  count: {
-    fontSize: 15,
-    color: '#c7d2fe',
-    marginTop: 4,
-  },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   filterContainer: {
     flexDirection: 'row',
-    backgroundColor: '#fff',
     paddingHorizontal: 16,
     paddingVertical: 12,
+    backgroundColor: '#fff',
     gap: 8,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
   },
   filterTab: {
     flex: 1,
@@ -252,17 +174,14 @@ const styles = StyleSheet.create({
     backgroundColor: '#4F46E5',
   },
   filterText: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '600',
     color: '#64748b',
   },
   filterTextActive: {
     color: '#fff',
   },
-  list: {
-    padding: 16,
-    paddingBottom: 100, // Space for sign out button
-  },
+  list: { padding: 16 },
   empty: {
     flex: 1,
     justifyContent: 'center',
@@ -279,15 +198,5 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#94a3b8',
     textAlign: 'center',
-  },
-  footer: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    padding: 20,
-    backgroundColor: '#fff',
-    borderTopWidth: 1,
-    borderTopColor: '#e2e8f0',
   },
 });

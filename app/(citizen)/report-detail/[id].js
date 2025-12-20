@@ -1,4 +1,3 @@
-// app/(citizen)/report-detail/[id].js - WITH VIDEO SUPPORT
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { doc, getDoc } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
@@ -15,6 +14,7 @@ import AfterMediaGallery from '../../../components/AfterMediaGallery';
 import MediaGallery from '../../../components/MediaGallery';
 import ReportHeader from '../../../components/ReportHeader';
 import ReportInfoSection from '../../../components/ReportInfoSection';
+import StatusTracker from '../../../components/StatusTracker';
 
 export default function CitizenReportDetail() {
   const { id } = useLocalSearchParams();
@@ -26,7 +26,13 @@ export default function CitizenReportDetail() {
     const fetchReport = async () => {
       const docSnap = await getDoc(doc(db, 'reports', id));
       if (docSnap.exists()) {
-        setReport({ id: docSnap.id, ...docSnap.data() });
+        const data = docSnap.data();
+        setReport({
+          id: docSnap.id,
+          ...data,
+          photoUrls: data.photoUrls || data.photos || [],
+          videoUrls: data.videoUrls || (data.video ? [data.video] : (data.videos || [])),
+        });
       }
       setLoading(false);
     };
@@ -53,8 +59,9 @@ export default function CitizenReportDetail() {
     <View style={styles.wrapper}>
       <ReportHeader title="Report Details" />
 
+      {!report.isDraft && <StatusTracker status={report.status} />}
+
       <ScrollView style={styles.container}>
-        {/* Draft Banner */}
         {report.isDraft && (
           <View style={styles.draftBanner}>
             <View style={styles.draftInfo}>
@@ -70,35 +77,32 @@ export default function CitizenReportDetail() {
           </View>
         )}
 
-        {/* BEFORE Media (Photos OR Video) */}
         <View style={styles.photoSection}>
           <Text style={styles.photoSectionTitle}>BEFORE Evidence</Text>
-          <MediaGallery photos={report.photos} video={report.video} />
+          <MediaGallery
+            photos={report.photoUrls}
+            videos={report.videoUrls}
+          />
         </View>
 
-        {/* Report Info */}
         <ReportInfoSection report={report} />
 
-        {/* AFTER Media - Only show if verified */}
-        {report.status === 'verified' && (report.afterPhotos?.length > 0 || report.afterVideo) && (
+        {report.status === 'verified' && (report.afterPhotos?.length > 0 || report.afterVideos?.length > 0 || report.afterVideo) && (
           <View style={styles.afterSection}>
             <View style={styles.verifiedBanner}>
-              <Text style={styles.verifiedBannerText}> ISSUE FIXED & VERIFIED</Text>
+              <Text style={styles.verifiedBannerText}>✓ ISSUE FIXED & VERIFIED</Text>
             </View>
-
             <View style={styles.photoSection}>
               <Text style={styles.photoSectionTitle}>AFTER Evidence</Text>
               <Text style={styles.photoSectionSubtitle}>Media taken after the issue was fixed</Text>
-
               <View style={styles.galleryWrapper}>
-                <AfterMediaGallery 
-                  photos={report.afterPhotos} 
-                  video={report.afterVideo}
-                  title="" 
+                <AfterMediaGallery
+                  photos={report.afterPhotos || []}
+                  videos={report.afterVideos || (report.afterVideo ? [report.afterVideo] : [])}
+                  title=""
                 />
               </View>
             </View>
-
             {report.resolutionNotes && (
               <View style={styles.resolutionNotesSection}>
                 <Text style={styles.sectionTitle}>Resolution Details</Text>
@@ -110,7 +114,6 @@ export default function CitizenReportDetail() {
           </View>
         )}
 
-        {/* If resolved but not verified yet */}
         {report.status === 'resolved' && (
           <View style={styles.pendingSection}>
             <Text style={styles.pendingText}>
@@ -119,7 +122,6 @@ export default function CitizenReportDetail() {
           </View>
         )}
 
-        {/* If reopened */}
         {report.status === 'reopened' && (
           <View style={styles.reopenedSection}>
             <Text style={styles.reopenedText}>
@@ -139,7 +141,6 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   error: { fontSize: 18, color: '#dc2626', fontWeight: '600' },
-
   draftBanner: {
     backgroundColor: '#fef3c7',
     padding: 20,
@@ -172,7 +173,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 15,
   },
-
   photoSection: { marginBottom: 24 },
   photoSectionTitle: {
     fontSize: 20,

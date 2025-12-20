@@ -1,9 +1,7 @@
-// components/JobCard.js
-// Reusable card component for displaying engineer jobs
 import { StyleSheet, Text, View } from 'react-native';
 
 export default function JobCard({ job, showDistance = false, userLocation = null }) {
-  // Calculate days until deadline
+  // Calculates days until deadline
   const getDaysUntilDeadline = (deadline) => {
     if (!deadline) return null;
     
@@ -15,15 +13,15 @@ export default function JobCard({ job, showDistance = false, userLocation = null
     return diffDays;
   };
 
-  // Get color based on days remaining
+  // Changes colour based on days remaining
   const getDeadlineColor = (daysLeft) => {
-    if (daysLeft < 0) return '#EF4444'; // Red - Overdue
-    if (daysLeft === 0) return '#F59E0B'; // Orange - Due today
-    if (daysLeft <= 2) return '#F59E0B'; // Orange - Due soon
-    return '#10B981'; // Green - On track
+    if (daysLeft < 0) return '#EF4444'; // Red meansOverdue
+    if (daysLeft === 0) return '#F59E0B'; // Orange means its due today
+    if (daysLeft <= 2) return '#F59E0B'; // Orange also means its due soon
+    return '#10B981'; // Green means on track
   };
 
-  // Get priority badge color
+  // Priority badge colour
   const getPriorityColor = (priority) => {
     switch (priority?.toLowerCase()) {
       case 'urgent':
@@ -39,10 +37,10 @@ export default function JobCard({ job, showDistance = false, userLocation = null
     }
   };
 
-  // Calculate distance between two coordinates (Haversine formula)
+  // Calculates distance between two coordinates (Haversine formula)
   // Returns distance in MILES (for UK usage)
   const calculateDistance = (lat1, lon1, lat2, lon2) => {
-    const R = 3959; // Earth's radius in MILES (not km)
+    const R = 3959; // Earth's radius in MILES 
     const dLat = (lat2 - lat1) * (Math.PI / 180);
     const dLon = (lon2 - lon1) * (Math.PI / 180);
     const a =
@@ -53,14 +51,14 @@ export default function JobCard({ job, showDistance = false, userLocation = null
         Math.sin(dLon / 2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     const distance = R * c;
-    return distance.toFixed(1); // Return distance in miles with 1 decimal
+    return distance.toFixed(1); // Returns distance in miles with 1 decimal
   };
 
   const daysLeft = getDaysUntilDeadline(job.deadline);
   const deadlineColor = daysLeft !== null ? getDeadlineColor(daysLeft) : '#6B7280';
   const priorityColor = getPriorityColor(job.priority);
 
-  // Calculate distance if user location is available
+  // Calculates the  distance if user's location is available
   let distance = null;
   if (showDistance && userLocation && job.location) {
     distance = calculateDistance(
@@ -73,7 +71,6 @@ export default function JobCard({ job, showDistance = false, userLocation = null
 
   return (
     <View style={styles.card}>
-      {/* Top Row: Priority and Status */}
       <View style={styles.topRow}>
         <View style={[styles.priorityBadge, { backgroundColor: priorityColor }]}>
           <Text style={styles.priorityText}>
