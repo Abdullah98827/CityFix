@@ -10,15 +10,15 @@ import {
   View,
 } from 'react-native';
 import { db } from '../../../backend/firebase';
-import AfterMediaGallery from '../../../components/AfterMediaGallery';
 import AssignmentDetails from '../../../components/AssignmentDetails';
 import CustomButton from '../../../components/CustomButton';
 import CustomInput from '../../../components/CustomInput';
-import FormMessage from '../../../components/FormMessage';
 import MediaGallery from '../../../components/MediaGallery';
+import MergedReportsSection from '../../../components/MergedReportsSection';
 import ReportHeader from '../../../components/ReportHeader';
 import ReportInfoSection from '../../../components/ReportInfoSection';
 import StatusTracker from '../../../components/StatusTracker';
+import { syncStatusToMergedReports } from '../../../utils/statusSyncHelper';
 
 export default function QAVerifyScreen() {
   const { id } = useLocalSearchParams();
@@ -28,30 +28,21 @@ export default function QAVerifyScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [qaFeedback, setQaFeedback] = useState('');
   const [reopenReason, setReopenReason] = useState('');
-  const [message, setMessage] = useState('');
-  const [isError, setIsError] = useState(false);
 
   useEffect(() => {
     const fetchReport = async () => {
-      try {
-        const reportDoc = await getDoc(doc(db, 'reports', id));
-        if (reportDoc.exists()) {
-          const data = reportDoc.data();
-          setReport({
-            id: reportDoc.id,
-            ...data,
-            photoUrls: data.photoUrls || data.photos || [],
-            videoUrls: data.videoUrls || (data.video ? [data.video] : (data.videos || [])),
-          });
-        } else {
-          setMessage('Report not found');
-          setIsError(true);
-        }
-      } catch (error) {
-        console.error('Error fetching report:', error);
-        setMessage('Failed to load report');
-        setIsError(true);
-      } finally {
+      const reportDoc = await getDoc(doc(db, 'reports', id));
+      if (reportDoc.exists()) {
+        const data = reportDoc.data();
+        setReport({
+          id: reportDoc.id,
+          ...data,
+          photoUrls: data.photoUrls || data.photos || [],
+          videoUrls: data.videoUrls || (data.video ? [data.video] : (data.videos || [])),
+        });
+        setLoading(false);
+      } else {
+        Alert.alert('Error', 'Report not found');
         setLoading(false);
       }
     };
@@ -69,24 +60,19 @@ export default function QAVerifyScreen() {
           style: 'default',
           onPress: async () => {
             setSubmitting(true);
-            try {
-              await updateDoc(doc(db, 'reports', id), {
-                status: 'verified',
-                qaFeedback: qaFeedback.trim() || 'Approved',
-                verifiedAt: new Date(),
-              });
-              setMessage('Report verified successfully!');
-              setIsError(false);
-              setTimeout(() => {
-                router.back();
-              }, 1500);
-            } catch (error) {
-              console.error('Error verifying report:', error);
-              setMessage('Failed to verify report');
-              setIsError(true);
-            } finally {
-              setSubmitting(false);
+            const updateData = {
+              status: 'verified',
+              qaFeedback: qaFeedback.trim() || 'Approved',
+              verifiedAt: new Date(),
+            };
+            await updateDoc(doc(db, 'reports', id), updateData);
+            if (report.duplicateCount > 0) {
+              await syncStatusToMergedReports(id, updateData);
             }
+            setSubmitting(false);
+            Alert.alert('Success', 'Report verified successfully!', [
+              { text: 'OK', onPress: () => router.back() }
+            ]);
           },
         },
       ]
@@ -95,11 +81,9 @@ export default function QAVerifyScreen() {
 
   const handleReopen = () => {
     if (!reopenReason.trim()) {
-      setMessage('Please provide a reason for reopening');
-      setIsError(true);
+      Alert.alert('Missing Information', 'Please provide a reason for reopening');
       return;
     }
-
     Alert.alert(
       'Reopen Report',
       'This will send the report back to the engineer. Continue?',
@@ -110,25 +94,20 @@ export default function QAVerifyScreen() {
           style: 'destructive',
           onPress: async () => {
             setSubmitting(true);
-            try {
-              await updateDoc(doc(db, 'reports', id), {
-                status: 'reopened',
-                reopenReason: reopenReason.trim(),
-                qaFeedback: qaFeedback.trim(),
-                reopenedAt: new Date(),
-              });
-              setMessage('Report reopened and sent back to engineer');
-              setIsError(false);
-              setTimeout(() => {
-                router.back();
-              }, 1500);
-            } catch (error) {
-              console.error('Error reopening report:', error);
-              setMessage('Failed to reopen report');
-              setIsError(true);
-            } finally {
-              setSubmitting(false);
+            const updateData = {
+              status: 'reopened',
+              reopenReason: reopenReason.trim(),
+              qaFeedback: qaFeedback.trim(),
+              reopenedAt: new Date(),
+            };
+            await updateDoc(doc(db, 'reports', id), updateData);
+            if (report.duplicateCount > 0) {
+              await syncStatusToMergedReports(id, updateData);
             }
+            setSubmitting(false);
+            Alert.alert('Success', 'Report reopened and sent back to engineer', [
+              { text: 'OK', onPress: () => router.back() }
+            ]);
           },
         },
       ]
@@ -154,20 +133,39 @@ export default function QAVerifyScreen() {
   return (
     <View style={styles.wrapper}>
       <ReportHeader title="Verify Report" />
-
       <StatusTracker status={report.status} />
-
       <ScrollView style={styles.container}>
-        <View style={styles.photoSection}>
-          <View style={styles.photoSectionHeader}>
-            <Text style={styles.photoSectionTitle}>BEFORE Evidence</Text>
-            <Text style={styles.photoSectionSubtitle}>Original issue reported by citizen</Text>
+        
+        {/* Side-by-side Before / After */}
+        <View style={styles.comparisonContainer}>
+          {/* BEFORE Evidence */}
+          <View style={styles.sideBox}>
+            <View style={styles.sideHeader}>
+              <Text style={styles.sideTitle}>BEFORE</Text>
+              <Text style={styles.sideSubtitle}>Original issue reported by citizen</Text>
+            </View>
+            <MediaGallery photos={report.photoUrls} videos={report.videoUrls} />
           </View>
-          <MediaGallery photos={report.photoUrls} videos={report.videoUrls} />
+
+          {/* AFTER Evidence */}
+          <View style={styles.sideBox}>
+            <View style={styles.sideHeader}>
+              <Text style={styles.sideTitle}>AFTER</Text>
+              <Text style={styles.sideSubtitle}>Media taken by engineer after fixing</Text>
+            </View>
+            {(report.afterPhotos && report.afterPhotos.length > 0) || (report.afterVideos && report.afterVideos.length > 0) ? (
+              <MediaGallery photos={report.afterPhotos || []} videos={report.afterVideos || []} />
+            ) : (
+              <View style={styles.noAfterMedia}>
+                <Text style={styles.noMediaText}>No after evidence provided</Text>
+                <Text style={styles.noMediaSubtext}>Consider reopening the report</Text>
+              </View>
+            )}
+          </View>
         </View>
 
         <ReportInfoSection report={report} />
-
+        <MergedReportsSection masterReport={report} role="qa" />
         <AssignmentDetails report={report} />
 
         <View style={styles.resolutionSection}>
@@ -188,32 +186,11 @@ export default function QAVerifyScreen() {
           </View>
         </View>
 
-        <View style={styles.photoSection}>
-          <View style={styles.photoSectionHeader}>
-            <Text style={styles.photoSectionTitle}>AFTER Evidence</Text>
-            <Text style={styles.photoSectionSubtitle}>Media taken by engineer after fixing</Text>
-          </View>
-          {(report.afterPhotos && report.afterPhotos.length > 0) || (report.afterVideos && report.afterVideos.length > 0) ? (
-            <View style={styles.galleryWrapper}>
-              <AfterMediaGallery
-                photos={report.afterPhotos || []}
-                videos={report.afterVideos || []}
-                title=""
-              />
-            </View>
-          ) : (
-            <View style={styles.noPhotos}>
-              <Text style={styles.noPhotosText}>No after evidence provided</Text>
-              <Text style={styles.noPhotosSubtext}>Engineer did not upload after media</Text>
-            </View>
-          )}
-        </View>
-
         {report.status === 'resolved' && (
           <View style={styles.verificationSection}>
             <Text style={styles.sectionTitle}>Quality Verification</Text>
             <Text style={styles.instructionText}>
-              Review the before and after evidence above. Verify if the issue has been resolved satisfactorily.
+              Review the before and after evidence above.
             </Text>
             <CustomInput
               label="QA Feedback (optional)"
@@ -225,30 +202,21 @@ export default function QAVerifyScreen() {
             />
             <CustomInput
               label="Reason for Reopening (required if rejecting)"
-              placeholder="Explain what needs to be fixed..."
+              placeholder="e.g. After photos don't show the fix"
               value={reopenReason}
               onChangeText={setReopenReason}
               multiline
               numberOfLines={3}
             />
-            <FormMessage message={message} isError={isError} />
             {submitting ? (
               <ActivityIndicator size="large" color="#4F46E5" style={{ marginVertical: 20 }} />
             ) : (
               <View style={styles.actionButtons}>
                 <View style={styles.buttonWrapper}>
-                  <CustomButton
-                    title="Verify"
-                    onPress={handleVerify}
-                    variant="secondary"
-                  />
+                  <CustomButton title="Verify" onPress={handleVerify} variant="secondary" />
                 </View>
                 <View style={styles.buttonWrapper}>
-                  <CustomButton
-                    title="Reopen"
-                    onPress={handleReopen}
-                    variant="danger"
-                  />
+                  <CustomButton title="Reopen" onPress={handleReopen} variant="danger" />
                 </View>
               </View>
             )}
@@ -273,7 +241,7 @@ export default function QAVerifyScreen() {
                   { color: report.status === 'verified' ? '#065f46' : '#991b1b' },
                 ]}
               >
-                {report.status === 'verified' ? '✓ VERIFIED' : '✗ REOPENED'}
+                {report.status === 'verified' ? 'VERIFIED' : 'REOPENED'}
               </Text>
               {report.qaFeedback && (
                 <View style={styles.feedbackBox}>
@@ -305,136 +273,71 @@ const styles = StyleSheet.create({
   wrapper: { flex: 1, backgroundColor: '#fff' },
   container: { flex: 1, backgroundColor: '#fff' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  photoSection: { marginBottom: 24 },
-  photoSectionHeader: {
-    paddingHorizontal: 24,
-    paddingVertical: 16,
+
+  comparisonContainer: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    marginBottom: 24,
+    gap: 12,
+  },
+  sideBox: {
+    flex: 1,
     backgroundColor: '#f8fafc',
-  },
-  photoSectionTitle: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: '#1e293b',
-    marginBottom: 4,
-  },
-  photoSectionSubtitle: {
-    fontSize: 14,
-    color: '#64748b',
-  },
-  galleryWrapper: {
-    paddingHorizontal: 24,
-  },
-  noPhotos: {
-    height: 200,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#fef2f2',
-    borderWidth: 2,
-    borderColor: '#fecaca',
-    borderStyle: 'dashed',
-  },
-  noPhotosText: {
-    fontSize: 18,
-    color: '#991b1b',
-    fontWeight: '600',
-  },
-  noPhotosSubtext: {
-    fontSize: 14,
-    color: '#dc2626',
-    marginTop: 4,
-  },
-  resolutionSection: {
-    paddingHorizontal: 24,
-    paddingBottom: 16,
-  },
-  verificationSection: {
-    paddingHorizontal: 24,
-    paddingBottom: 24,
-    backgroundColor: '#f8fafc',
-    paddingTop: 24,
-  },
-  decisionSection: {
-    paddingHorizontal: 24,
-    paddingBottom: 24,
-  },
-  sectionTitle: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: '#1e293b',
-    marginBottom: 16,
-  },
-  instructionText: {
-    fontSize: 15,
-    color: '#64748b',
-    marginBottom: 20,
-    lineHeight: 22,
-  },
-  infoBox: {
-    backgroundColor: '#f8fafc',
+    borderRadius: 16,
     padding: 16,
-    borderRadius: 12,
     borderWidth: 1,
     borderColor: '#e2e8f0',
   },
-  infoRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  sideHeader: {
     marginBottom: 12,
   },
+  sideTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#1e293b',
+    textAlign: 'center',
+  },
+  sideSubtitle: {
+    fontSize: 14,
+    color: '#64748b',
+    textAlign: 'center',
+    marginTop: 4,
+  },
+  noAfterMedia: {
+    height: 200,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  noMediaText: {
+    fontSize: 16,
+    color: '#94a3b8',
+    fontWeight: '600',
+  },
+  noMediaSubtext: {
+    fontSize: 14,
+    color: '#64748b',
+    marginTop: 8,
+    textAlign: 'center',
+  },
+
+  resolutionSection: { paddingHorizontal: 24, paddingBottom: 16 },
+  verificationSection: { paddingHorizontal: 24, paddingBottom: 24, backgroundColor: '#f8fafc', paddingTop: 24 },
+  decisionSection: { paddingHorizontal: 24, paddingBottom: 24 },
+  sectionTitle: { fontSize: 22, fontWeight: '800', color: '#1e293b', marginBottom: 16 },
+  instructionText: { fontSize: 15, color: '#64748b', marginBottom: 20, lineHeight: 22 },
+  infoBox: { backgroundColor: '#f8fafc', padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#e2e8f0' },
+  infoRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 },
   label: { fontSize: 15, color: '#64748b', fontWeight: '600' },
   value: { fontSize: 15, color: '#334155', fontWeight: '500' },
   notesBox: { marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#e2e8f0' },
-  notesText: {
-    fontSize: 15,
-    color: '#475569',
-    marginTop: 8,
-    lineHeight: 22,
-  },
-  actionButtons: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 16,
-  },
-  buttonWrapper: {
-    flex: 1,
-  },
-  decisionBox: {
-    padding: 20,
-    borderRadius: 16,
-    borderWidth: 3,
-  },
-  decisionStatus: {
-    fontSize: 24,
-    fontWeight: '900',
-    textAlign: 'center',
-    marginBottom: 16,
-  },
-  feedbackBox: {
-    marginTop: 12,
-    marginBottom: 12,
-  },
-  feedbackText: {
-    fontSize: 15,
-    color: '#065f46',
-    marginTop: 8,
-    lineHeight: 22,
-  },
-  reopenText: {
-    fontSize: 15,
-    color: '#991b1b',
-    marginTop: 8,
-    lineHeight: 22,
-    fontWeight: '500',
-  },
-  decisionDate: {
-    fontSize: 13,
-    color: '#64748b',
-    marginTop: 12,
-    textAlign: 'center',
-    fontStyle: 'italic',
-  },
-  error: {
-    fontSize: 18,
-    color: '#dc2626',
-  },
+  notesText: { fontSize: 15, color: '#475569', marginTop: 8, lineHeight: 22 },
+  actionButtons: { flexDirection: 'row', gap: 12, marginTop: 16 },
+  buttonWrapper: { flex: 1 },
+  decisionBox: { padding: 20, borderRadius: 16, borderWidth: 3 },
+  decisionStatus: { fontSize: 24, fontWeight: '900', textAlign: 'center', marginBottom: 16 },
+  feedbackBox: { marginTop: 12, marginBottom: 12 },
+  feedbackText: { fontSize: 15, color: '#065f46', marginTop: 8, lineHeight: 22 },
+  reopenText: { fontSize: 15, color: '#991b1b', marginTop: 8, lineHeight: 22, fontWeight: '500' },
+  decisionDate: { fontSize: 13, color: '#64748b', marginTop: 12, textAlign: 'center', fontStyle: 'italic' },
+  error: { fontSize: 18, color: '#dc2626' },
 });

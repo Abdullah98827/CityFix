@@ -10,8 +10,8 @@ import {
   View,
 } from 'react-native';
 import { db } from '../../../backend/firebase';
-import AfterMediaGallery from '../../../components/AfterMediaGallery';
-import MediaGallery from '../../../components/MediaGallery';
+import MediaGallery from '../../../components/MediaGallery'; // Only one gallery now
+import MergedReportsSection from '../../../components/MergedReportsSection';
 import ReportHeader from '../../../components/ReportHeader';
 import ReportInfoSection from '../../../components/ReportInfoSection';
 import StatusTracker from '../../../components/StatusTracker';
@@ -32,6 +32,9 @@ export default function CitizenReportDetail() {
           ...data,
           photoUrls: data.photoUrls || data.photos || [],
           videoUrls: data.videoUrls || (data.video ? [data.video] : (data.videos || [])),
+          // Normalize after media
+          afterPhotos: data.afterPhotos || [],
+          afterVideos: data.afterVideos || (data.afterVideo ? [data.afterVideo] : []),
         });
       }
       setLoading(false);
@@ -56,12 +59,12 @@ export default function CitizenReportDetail() {
   }
 
   return (
-    <View style={styles.wrapper}>
+    <View style={styles.wrapper}>0
       <ReportHeader title="Report Details" />
-
       {!report.isDraft && <StatusTracker status={report.status} />}
 
       <ScrollView style={styles.container}>
+        {/* Draft Banner */}
         {report.isDraft && (
           <View style={styles.draftBanner}>
             <View style={styles.draftInfo}>
@@ -77,32 +80,47 @@ export default function CitizenReportDetail() {
           </View>
         )}
 
+        {/* BEFORE Evidence */}
         <View style={styles.photoSection}>
           <Text style={styles.photoSectionTitle}>BEFORE Evidence</Text>
-          <MediaGallery
-            photos={report.photoUrls}
-            videos={report.videoUrls}
-          />
+          <MediaGallery photos={report.photoUrls} videos={report.videoUrls} />
         </View>
 
         <ReportInfoSection report={report} />
 
-        {report.status === 'verified' && (report.afterPhotos?.length > 0 || report.afterVideos?.length > 0 || report.afterVideo) && (
+        {/* Merged Notice */}
+        {report.isDuplicateOf && (
+          <View style={styles.mergedNotice}>
+            <Text style={styles.mergedNoticeTitle}>Merged Report</Text>
+            <Text style={styles.mergedNoticeText}>
+              This report was merged with similar reports. All updates will be reflected here.
+            </Text>
+          </View>
+        )}
+
+        <MergedReportsSection masterReport={report} role="citizen" />
+
+        {/* AFTER Evidence - Only shown when verified + has media */}
+        {report.status === 'verified' && (report.afterPhotos.length > 0 || report.afterVideos.length > 0) && (
           <View style={styles.afterSection}>
             <View style={styles.verifiedBanner}>
-              <Text style={styles.verifiedBannerText}>✓ ISSUE FIXED & VERIFIED</Text>
+              <Text style={styles.verifiedBannerText}>ISSUE FIXED & VERIFIED</Text>
             </View>
+
             <View style={styles.photoSection}>
               <Text style={styles.photoSectionTitle}>AFTER Evidence</Text>
-              <Text style={styles.photoSectionSubtitle}>Media taken after the issue was fixed</Text>
+              <Text style={styles.photoSectionSubtitle}>
+                Media taken after the issue was fixed
+              </Text>
               <View style={styles.galleryWrapper}>
-                <AfterMediaGallery
-                  photos={report.afterPhotos || []}
-                  videos={report.afterVideos || (report.afterVideo ? [report.afterVideo] : [])}
-                  title=""
+                <MediaGallery
+                  photos={report.afterPhotos}
+                  videos={report.afterVideos}
                 />
               </View>
             </View>
+
+            {/* Resolution Notes */}
             {report.resolutionNotes && (
               <View style={styles.resolutionNotesSection}>
                 <Text style={styles.sectionTitle}>Resolution Details</Text>
@@ -114,6 +132,7 @@ export default function CitizenReportDetail() {
           </View>
         )}
 
+        {/* Pending Verification */}
         {report.status === 'resolved' && (
           <View style={styles.pendingSection}>
             <Text style={styles.pendingText}>
@@ -122,6 +141,7 @@ export default function CitizenReportDetail() {
           </View>
         )}
 
+        {/* Reopened */}
         {report.status === 'reopened' && (
           <View style={styles.reopenedSection}>
             <Text style={styles.reopenedText}>
@@ -141,6 +161,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   error: { fontSize: 18, color: '#dc2626', fontWeight: '600' },
+
   draftBanner: {
     backgroundColor: '#fef3c7',
     padding: 20,
@@ -151,28 +172,16 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   draftInfo: { flex: 1 },
-  draftText: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#92400e',
-    marginBottom: 4,
-  },
-  draftSubtext: {
-    fontSize: 13,
-    color: '#78350f',
-    fontWeight: '500',
-  },
+  draftText: { fontSize: 18, fontWeight: '800', color: '#92400e', marginBottom: 4 },
+  draftSubtext: { fontSize: 13, color: '#78350f', fontWeight: '500' },
   editDraftBtn: {
     backgroundColor: '#4F46E5',
     paddingHorizontal: 20,
     paddingVertical: 12,
     borderRadius: 10,
   },
-  editDraftBtnText: {
-    color: '#fff',
-    fontWeight: '700',
-    fontSize: 15,
-  },
+  editDraftBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+
   photoSection: { marginBottom: 24 },
   photoSectionTitle: {
     fontSize: 20,
@@ -190,37 +199,20 @@ const styles = StyleSheet.create({
     backgroundColor: '#f8fafc',
   },
   galleryWrapper: { paddingHorizontal: 24 },
+
   afterSection: { marginTop: 24 },
   verifiedBanner: {
     backgroundColor: '#10b981',
     paddingVertical: 16,
     alignItems: 'center',
   },
-  verifiedBannerText: {
-    fontSize: 18,
-    fontWeight: '900',
-    color: '#fff',
-  },
-  resolutionNotesSection: {
-    paddingHorizontal: 24,
-    paddingBottom: 24,
-  },
-  sectionTitle: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: '#1e293b',
-    marginBottom: 16,
-  },
-  notesBox: {
-    backgroundColor: '#f8fafc',
-    padding: 16,
-    borderRadius: 12,
-  },
-  notesText: {
-    fontSize: 15,
-    color: '#475569',
-    lineHeight: 22,
-  },
+  verifiedBannerText: { fontSize: 18, fontWeight: '900', color: '#fff' },
+
+  resolutionNotesSection: { paddingHorizontal: 24, paddingBottom: 24 },
+  sectionTitle: { fontSize: 22, fontWeight: '800', color: '#1e293b', marginBottom: 16 },
+  notesBox: { backgroundColor: '#f8fafc', padding: 16, borderRadius: 12 },
+  notesText: { fontSize: 15, color: '#475569', lineHeight: 22 },
+
   pendingSection: {
     marginHorizontal: 24,
     marginTop: 24,
@@ -230,12 +222,8 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: '#fbbf24',
   },
-  pendingText: {
-    fontSize: 15,
-    color: '#92400e',
-    textAlign: 'center',
-    fontWeight: '600',
-  },
+  pendingText: { fontSize: 15, color: '#92400e', textAlign: 'center', fontWeight: '600' },
+
   reopenedSection: {
     marginHorizontal: 24,
     marginTop: 24,
@@ -245,10 +233,17 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: '#ef4444',
   },
-  reopenedText: {
-    fontSize: 15,
-    color: '#991b1b',
-    textAlign: 'center',
-    fontWeight: '600',
+  reopenedText: { fontSize: 15, color: '#991b1b', textAlign: 'center', fontWeight: '600' },
+
+  mergedNotice: {
+    marginHorizontal: 24,
+    marginVertical: 16,
+    backgroundColor: '#fef3c7',
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#fbbf24',
   },
+  mergedNoticeTitle: { fontSize: 16, fontWeight: '700', color: '#92400e', marginBottom: 8 },
+  mergedNoticeText: { fontSize: 14, color: '#78350f', lineHeight: 20 },
 });
