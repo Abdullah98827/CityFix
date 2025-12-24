@@ -1,11 +1,14 @@
-// components/MergedReportsSection.js
-// Reusable component to display merged duplicate reports
-// Shows all citizen reports that were merged into this master report
-
 import { useRouter } from 'expo-router';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Image,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { db } from '../backend/firebase';
 
 export default function MergedReportsSection({ masterReport, role = 'dispatcher' }) {
@@ -14,46 +17,41 @@ export default function MergedReportsSection({ masterReport, role = 'dispatcher'
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState(false);
 
+  // Fetches merged duplicate reports when the component loads
   useEffect(() => {
     const fetchMergedReports = async () => {
-      // Only fetch if this report has merged duplicates
+      // If the report has no duplicates, doesn't bother querying
       if (!masterReport.duplicateCount || masterReport.duplicateCount === 0) {
         setLoading(false);
         return;
       }
 
-      try {
-        // Query all reports that were merged into this master report
-        const q = query(
-          collection(db, 'reports'),
-          where('isDuplicateOf', '==', masterReport.id)
-        );
-        
-        const snapshot = await getDocs(q);
-        const reports = [];
-        
-        snapshot.forEach((doc) => {
-          reports.push({ id: doc.id, ...doc.data() });
-        });
+      // Query all reports that point to this one as their master
+      const q = query(
+        collection(db, 'reports'),
+        where('isDuplicateOf', '==', masterReport.id)
+      );
 
-        setMergedReports(reports);
-      } catch (error) {
-        console.error('Error fetching merged reports:', error);
-      } finally {
-        setLoading(false);
-      }
+      const snapshot = await getDocs(q);
+      const reports = [];
+      snapshot.forEach((doc) => {
+        reports.push({ id: doc.id, ...doc.data() });
+      });
+
+      setMergedReports(reports);
+      setLoading(false);
     };
 
     fetchMergedReports();
   }, [masterReport.id, masterReport.duplicateCount]);
 
-  // Don't show anything if no duplicates
+  // If no duplicates, don't show the whole section
   if (!masterReport.duplicateCount || masterReport.duplicateCount === 0) {
     return null;
   }
 
+  // Navigate to the right detail screen based on user's role
   const handleReportPress = (reportId) => {
-    // Navigate to appropriate detail screen based on role
     if (role === 'dispatcher') {
       router.push(`/(dispatcher)/report-detail/${reportId}`);
     } else if (role === 'engineer') {
@@ -67,7 +65,7 @@ export default function MergedReportsSection({ masterReport, role = 'dispatcher'
 
   return (
     <View style={styles.container}>
-      {/* Header */}
+      {/* Header with icon and count */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           <View style={styles.iconBadge}>
@@ -76,22 +74,22 @@ export default function MergedReportsSection({ masterReport, role = 'dispatcher'
           <View>
             <Text style={styles.headerTitle}>Merged Reports</Text>
             <Text style={styles.headerSubtitle}>
-                This issue was reported by {masterReport.duplicateCount + 1} citizen{masterReport.duplicateCount > 0 ? 's' : ''}
+              This issue was reported by {masterReport.duplicateCount + 1} citizen{masterReport.duplicateCount > 0 ? 's' : ''}
             </Text>
           </View>
         </View>
       </View>
 
-      {/* Info Box */}
+      {/* Info box explaining how merging works */}
       <View style={styles.infoBox}>
         <Text style={styles.infoText}>
-          <Text style={styles.infoBold}>Master Report:</Text> This is the main report. 
+          <Text style={styles.infoBold}>Master Report:</Text> This is the main report.
           When you update this, all {masterReport.duplicateCount} merged report{masterReport.duplicateCount > 1 ? 's' : ''} will be updated too.
         </Text>
       </View>
 
-      {/* Toggle Button */}
-      <TouchableOpacity 
+      {/* Toggle to show/hide the list */}
+      <TouchableOpacity
         style={styles.toggleButton}
         onPress={() => setExpanded(!expanded)}
       >
@@ -100,7 +98,7 @@ export default function MergedReportsSection({ masterReport, role = 'dispatcher'
         </Text>
       </TouchableOpacity>
 
-      {/* Merged Reports List */}
+      {/* List of merged reports (only when expanded) */}
       {expanded && (
         <View style={styles.reportsList}>
           {loading ? (
@@ -117,8 +115,8 @@ export default function MergedReportsSection({ masterReport, role = 'dispatcher'
                 {/* Thumbnail */}
                 <View style={styles.reportThumbnail}>
                   {report.photoUrls && report.photoUrls[0] ? (
-                    <Image 
-                      source={{ uri: report.photoUrls[0] }} 
+                    <Image
+                      source={{ uri: report.photoUrls[0] }}
                       style={styles.thumbnailImage}
                     />
                   ) : (
@@ -128,7 +126,7 @@ export default function MergedReportsSection({ masterReport, role = 'dispatcher'
                   )}
                 </View>
 
-                {/* Report Info */}
+                {/* Report info */}
                 <View style={styles.reportInfo}>
                   <Text style={styles.reportTitle} numberOfLines={2}>
                     {report.title || 'Untitled Report'}
@@ -138,17 +136,17 @@ export default function MergedReportsSection({ masterReport, role = 'dispatcher'
                   </Text>
                   <Text style={styles.reportMeta}>
                     {report.createdAt?.toDate?.().toLocaleDateString('en-GB')} at{' '}
-                    {report.createdAt?.toDate?.().toLocaleTimeString('en-GB', { 
-                      hour: '2-digit', 
-                      minute: '2-digit' 
+                    {report.createdAt?.toDate?.().toLocaleTimeString('en-GB', {
+                      hour: '2-digit',
+                      minute: '2-digit',
                     })}
                   </Text>
                   <Text style={styles.reportAddress} numberOfLines={1}>
-                    📍 {report.address || 'Location saved'}
+                    {report.address || 'Location saved'}
                   </Text>
                 </View>
 
-                {/* Arrow */}
+                {/* Right arrow */}
                 <View style={styles.arrow}>
                   <Text style={styles.arrowText}>→</Text>
                 </View>
@@ -158,7 +156,7 @@ export default function MergedReportsSection({ masterReport, role = 'dispatcher'
         </View>
       )}
 
-      {/* Summary Footer */}
+      {/* Footer note when expanded */}
       {expanded && mergedReports.length > 0 && (
         <View style={styles.footer}>
           <Text style={styles.footerText}>

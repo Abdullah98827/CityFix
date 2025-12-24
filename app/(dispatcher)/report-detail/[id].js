@@ -31,17 +31,22 @@ import { syncStatusToMergedReports } from '../../../utils/statusSyncHelper';
 export default function DispatcherReportDetail() {
   const { id } = useLocalSearchParams();
   const router = useRouter();
+
+  // State for report data and assignment form
   const [report, setReport] = useState(null);
   const [engineers, setEngineers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+
   const [selectedEngineer, setSelectedEngineer] = useState('');
   const [priority, setPriority] = useState('medium');
   const [deadline, setDeadline] = useState('');
   const [notes, setNotes] = useState('');
 
+  // Fetch report and list of engineers when screen loads
   useEffect(() => {
     const fetchData = async () => {
+      // Get the main report
       const reportDoc = await getDoc(doc(db, 'reports', id));
       if (reportDoc.exists()) {
         setReport({ id: reportDoc.id, ...reportDoc.data() });
@@ -49,6 +54,7 @@ export default function DispatcherReportDetail() {
         Alert.alert('Error', 'Report not found');
       }
 
+      // Get all engineers for assignment dropdown
       const engineersQuery = query(
         collection(db, 'UserMD'),
         where('role', '==', 'engineer')
@@ -59,12 +65,16 @@ export default function DispatcherReportDetail() {
         engineersList.push({ id: doc.id, ...doc.data() });
       });
       setEngineers(engineersList);
+
       setLoading(false);
     };
+
     fetchData();
   }, [id]);
 
+  // Handle assigning the report to an engineer
   const handleAssign = async () => {
+    // Basic validation
     if (!selectedEngineer) {
       Alert.alert('Missing Information', 'Please select an engineer');
       return;
@@ -76,10 +86,11 @@ export default function DispatcherReportDetail() {
 
     const selectedEngineerData = engineers.find((e) => e.id === selectedEngineer);
 
+    // Confirm with dispatcher
     Alert.alert(
       'Confirm Assignment',
       `Assign this report to ${selectedEngineerData?.name}?${
-        report.duplicateCount > 0 
+        report.duplicateCount > 0
           ? `\n\nThis will also assign ${report.duplicateCount} merged duplicate report(s).`
           : ''
       }`,
@@ -89,24 +100,29 @@ export default function DispatcherReportDetail() {
           text: 'Assign',
           onPress: async () => {
             setSubmitting(true);
-            
+
+            // Validate deadline is a future date
+            const deadlineDate = new Date(deadline);
+            if (isNaN(deadlineDate.getTime()) || deadlineDate <= new Date()) {
+              Alert.alert('Invalid Deadline', 'Please enter a valid future date like YYYY-MM-DD');
+              setSubmitting(false);
+              return;
+            }
+
             const updateData = {
               status: 'assigned',
               assignedTo: selectedEngineer,
               assignedToName: selectedEngineerData?.name,
               priority,
-              deadline,
+              deadline: deadlineDate,
               dispatcherNotes: notes,
               assignedAt: new Date(),
             };
-            const deadlineDate = new Date(deadline);
-if (isNaN(deadlineDate.getTime()) || deadlineDate <= new Date()) {
-  Alert.alert('Invalid Deadline', 'Please enter a valid future date like YYYY-MM-DD');
-  return;
-}
 
+            // Update the main report
             await updateDoc(doc(db, 'reports', id), updateData);
 
+            // If there are merged duplicates, sync the status to them too
             if (report.duplicateCount > 0) {
               await syncStatusToMergedReports(id, updateData);
             }
@@ -125,6 +141,7 @@ if (isNaN(deadlineDate.getTime()) || deadlineDate <= new Date()) {
     );
   };
 
+  // Loading state
   if (loading) {
     return (
       <View style={styles.center}>
@@ -133,6 +150,7 @@ if (isNaN(deadlineDate.getTime()) || deadlineDate <= new Date()) {
     );
   }
 
+  // Report not found
   if (!report) {
     return (
       <View style={styles.center}>
@@ -144,23 +162,19 @@ if (isNaN(deadlineDate.getTime()) || deadlineDate <= new Date()) {
   return (
     <View style={styles.wrapper}>
       <ReportHeader title="Report Details" />
-
       {!report.isDraft && <StatusTracker status={report.status} />}
-
       <ScrollView style={styles.container}>
         <MediaGallery
           photos={report.photoUrls || report.photos || []}
           videos={report.videoUrls || []}
         />
-
         <ReportInfoSection report={report} />
-
         <MergedReportsSection masterReport={report} role="dispatcher" />
 
+        {/* Assignment form – only shown when report is submitted */}
         {report.status === 'submitted' && (
           <View style={styles.workOrderSection}>
             <Text style={styles.sectionTitle}>Create Work Order</Text>
-
             <Text style={styles.inputLabel}>Assign to Engineer</Text>
             {engineers.length === 0 ? (
               <Text style={styles.noEngineers}>No engineers available</Text>
@@ -227,6 +241,7 @@ if (isNaN(deadlineDate.getTime()) || deadlineDate <= new Date()) {
           </View>
         )}
 
+        {/* Show assignment info if already assigned */}
         {report.status !== 'submitted' && (
           <View style={styles.assignedInfo}>
             <Text style={styles.sectionTitle}>Assignment Details</Text>
@@ -267,7 +282,16 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 22, fontWeight: '800', color: '#1e293b', marginBottom: 16 },
   inputLabel: { fontSize: 15, fontWeight: '600', color: '#333', marginBottom: 12 },
   engineerList: { marginBottom: 24 },
-  engineerCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', padding: 16, borderRadius: 12, marginBottom: 12, borderWidth: 2, borderColor: '#e2e8f0' },
+  engineerCard: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    backgroundColor: '#fff', 
+    padding: 16, 
+    borderRadius: 12, 
+    marginBottom: 12, 
+    borderWidth: 2, 
+    borderColor: '#e2e8f0' 
+  },
   engineerCardSelected: { borderColor: '#4F46E5', backgroundColor: '#f5f3ff' },
   engineerAvatar: { width: 50, height: 50, borderRadius: 25, backgroundColor: '#e0e7ff', marginRight: 16 },
   engineerInfo: { flex: 1 },
@@ -276,7 +300,15 @@ const styles = StyleSheet.create({
   checkMark: { fontSize: 24, color: '#4F46E5', fontWeight: 'bold' },
   noEngineers: { fontSize: 16, color: '#94a3b8', textAlign: 'center', marginBottom: 24 },
   priorityButtons: { flexDirection: 'row', gap: 8, marginBottom: 24 },
-  priorityBtn: { flex: 1, paddingVertical: 12, borderRadius: 12, backgroundColor: '#f1f5f9', alignItems: 'center', borderWidth: 2, borderColor: '#e2e8f0' },
+  priorityBtn: { 
+    flex: 1, 
+    paddingVertical: 12, 
+    borderRadius: 12, 
+    backgroundColor: '#f1f5f9', 
+    alignItems: 'center', 
+    borderWidth: 2, 
+    borderColor: '#e2e8f0' 
+  },
   priorityBtnSelected: { backgroundColor: '#4F46E5', borderColor: '#4F46E5' },
   priorityText: { fontSize: 13, fontWeight: '700', color: '#64748b' },
   priorityTextSelected: { color: '#fff' },

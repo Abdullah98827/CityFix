@@ -11,6 +11,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import NotificationsScreen from '../(common)/notifications';
 import { db } from '../../backend/firebase';
 import AppHeader from '../../components/AppHeader';
 
@@ -22,6 +23,7 @@ export default function AdminHome() {
   const [activeTab, setActiveTab] = useState('users');
   const unsubscribeUsersRef = useRef(null);
   const unsubscribeCategoriesRef = useRef(null);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   useEffect(() => {
     // Loads all the users
@@ -174,7 +176,8 @@ export default function AdminHome() {
 
   return (
     <View style={styles.container}>
-      <AppHeader title="Admin Panel" showBack={false} showSignOut={true} />
+      <AppHeader title="Admin Panel" showBack={false} showSignOut={true} unreadCount={unreadCount}
+       />
 
       <View style={styles.tabContainer}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
@@ -230,6 +233,10 @@ export default function AdminHome() {
           )}
         </ScrollView>
       )}
+      <View style={styles.hiddenNotifications}>
+        <NotificationsScreen onUnreadCountChange={setUnreadCount} />
+      </View>
+
     </View>
   );
 }
@@ -332,4 +339,12 @@ const styles = StyleSheet.create({
   categoryText: { fontSize: 16, color: '#1e293b' },
   removeText: { color: '#dc2626', fontWeight: '600' },
   emptyText: { fontSize: 18, color: '#64748b', textAlign: 'center', marginTop: 40 },
+  hiddenNotifications: {
+    position: 'absolute',
+    left: -9999,
+    top: -9999,
+    width: 1,
+    height: 1,
+    opacity: 0,
+  },
 });

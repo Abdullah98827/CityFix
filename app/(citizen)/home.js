@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import NotificationsScreen from '../(common)/notifications';
 import { auth, db } from '../../backend/firebase';
 import AppHeader from '../../components/AppHeader';
 
@@ -15,6 +16,7 @@ export default function CitizenHome() {
   const router = useRouter();
   const [userName, setUserName] = useState('Citizen');
   const [loading, setLoading] = useState(true);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   useEffect(() => {
     const fetchUserData = async () => {
@@ -40,7 +42,12 @@ export default function CitizenHome() {
 
   return (
     <View style={styles.container}>
-      <AppHeader title="CityFix" showBack={false} showSignOut={true} />
+      <AppHeader 
+        title="CityFix" 
+        showBack={false} 
+        showSignOut={true} 
+        unreadCount={unreadCount} 
+      />
 
       <View style={styles.content}>
         <Text style={styles.greeting}>Hello {userName}!</Text>
@@ -72,6 +79,9 @@ export default function CitizenHome() {
           </TouchableOpacity>
         </View>
       </View>
+      <View style={styles.hiddenNotifications}>
+        <NotificationsScreen onUnreadCountChange={setUnreadCount} />
+      </View>
     </View>
   );
 }
@@ -97,4 +107,12 @@ const styles = StyleSheet.create({
   },
   cardTitle: { fontSize: 18, fontWeight: '700', color: '#1e293b', marginBottom: 4 },
   cardDesc: { fontSize: 14, color: '#64748b' },
+  hiddenNotifications: {
+    position: 'absolute',
+    left: -9999,
+    top: -9999,
+    width: 1,
+    height: 1,
+    opacity: 0,
+  },
 });

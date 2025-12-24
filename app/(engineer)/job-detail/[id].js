@@ -25,6 +25,7 @@ import { syncStatusToMergedReports } from '../../../utils/statusSyncHelper';
 export default function EngineerJobDetail() {
   const { id } = useLocalSearchParams();
   const router = useRouter();
+
   const [job, setJob] = useState(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -33,13 +34,15 @@ export default function EngineerJobDetail() {
   const [afterMedia, setAfterMedia] = useState([]);
   const [newStatus, setNewStatus] = useState('in progress');
 
+  // Fetch job details when screen loads
   useEffect(() => {
     const fetchJob = async () => {
       const jobDoc = await getDoc(doc(db, 'reports', id));
-      
+
       if (jobDoc.exists()) {
         const jobData = { id: jobDoc.id, ...jobDoc.data() };
         setJob(jobData);
+
         if (jobData.resolutionNotes) setResolutionNotes(jobData.resolutionNotes);
 
         const loadedMedia = [];
@@ -54,24 +57,24 @@ export default function EngineerJobDetail() {
         setAfterMedia(loadedMedia);
 
         if (jobData.status === 'in progress') setNewStatus('in progress');
-        setLoading(false);
       } else {
         Alert.alert('Error', 'Job not found');
-        setLoading(false);
       }
+
+      setLoading(false);
     };
-    
+
     fetchJob();
   }, [id]);
 
+  // Pick from gallery for after evidence
   const handleAfterGalleryPick = async () => {
     const videoCount = afterMedia.filter(m => m.type === 'video').length;
-    
     if (videoCount >= 1) {
       Alert.alert('Video Limit', 'You can only upload 1 video. Remove the existing video first.');
       return;
     }
-    
+
     await MediaPicker.pickFromGallery(
       (newMedia) => {
         const newVideoCount = newMedia.filter(m => m.type === 'video').length;
@@ -86,14 +89,14 @@ export default function EngineerJobDetail() {
     );
   };
 
+  // Pick from camera for after evidence
   const handleAfterCameraPick = async () => {
     const videoCount = afterMedia.filter(m => m.type === 'video').length;
-    
     if (videoCount >= 1) {
       Alert.alert('Video Limit', 'You can only upload 1 video. Remove the existing video first.');
       return;
     }
-    
+
     await MediaPicker.pickFromCamera(
       (newMedia) => {
         const newVideoCount = newMedia.filter(m => m.type === 'video').length;
@@ -108,151 +111,144 @@ export default function EngineerJobDetail() {
     );
   };
 
+  // Remove media from after evidence
   const handleRemoveAfterMedia = (index) => {
     setAfterMedia(afterMedia.filter((_, i) => i !== index));
   };
 
+  // Start the job (change status to 'in progress')
   const handleStartJob = async () => {
     setSubmitting(true);
-    
+
     await updateDoc(doc(db, 'reports', id), {
       status: 'in progress',
       startedAt: new Date(),
     });
-    
+
     setJob({ ...job, status: 'in progress' });
     setSubmitting(false);
     Alert.alert('Success', 'Job started successfully!');
   };
 
+  // Handle saving progress or marking as resolved
   const handleResolve = async () => {
-  if (newStatus === 'resolved') {
-    if (!resolutionNotes.trim()) {
-      Alert.alert('Missing Information', 'Please add resolution notes');
-      return;
+    // Validation for resolved status
+    if (newStatus === 'resolved') {
+      if (!resolutionNotes.trim()) {
+        Alert.alert('Missing Information', 'Please add resolution notes');
+        return;
+      }
+      if (afterMedia.length === 0) {
+        Alert.alert('Missing Evidence', 'Please add after media (photos or videos)');
+        return;
+      }
     }
-    if (afterMedia.length === 0) {
-      Alert.alert('Missing Evidence', 'Please add after media (photos or videos)');
-      return;
-    }
-  }
 
-  Alert.alert(
-    'Confirm',
-    newStatus === 'resolved' ? 'Mark job as resolved?' : 'Save progress?',
-    [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: newStatus === 'resolved' ? 'Mark Resolved' : 'Save Progress',
-        onPress: async () => {
-          setSubmitting(true);
-          setUploadProgress('Preparing upload...');
+    Alert.alert(
+      'Confirm',
+      newStatus === 'resolved' ? 'Mark job as resolved?' : 'Save progress?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: newStatus === 'resolved' ? 'Mark Resolved' : 'Save Progress',
+          onPress: async () => {
+            setSubmitting(true);
+            setUploadProgress('Preparing upload...');
 
-          const totalItems = afterMedia.length;
-          let currentItem = 0;
+            const totalItems = afterMedia.length;
+            let currentItem = 0;
+            const uploadedAfterPhotoUrls = [];
+            const uploadedAfterVideoUrls = [];
 
-          const uploadedAfterPhotoUrls = [];
-          const uploadedAfterVideoUrls = [];
+            // Upload each media item
+            for (let i = 0; i < afterMedia.length; i++) {
+              const item = afterMedia[i];
+              if (item.type !== 'photo' && item.type !== 'video') continue;
 
-          for (let i = 0; i < afterMedia.length; i++) {
-            const item = afterMedia[i];
+              currentItem++;
+              setUploadProgress(`Uploading ${currentItem}/${totalItems} (0%)...`);
 
-            if (item.type !== 'photo' && item.type !== 'video') continue;
+              const isVideo = item.type === 'video';
+              const uri = item.uri;
+              const fileName = isVideo
+                ? `after_video_${Date.now()}_${i}.mp4`
+                : `after_photo_${Date.now()}_${Math.random().toString(36).substring(7)}.jpg`;
+              const folder = isVideo ? 'videos' : 'images';
+              const storageRef = ref(storage, `${folder}/${auth.currentUser.uid}/${fileName}`);
 
-            currentItem++;
-            setUploadProgress(`Uploading ${currentItem}/${totalItems} (0%)...`);
+              const response = await fetch(uri);
+              const blob = await response.blob();
 
-            const isVideo = item.type === 'video';
-            const uri = item.uri;
+              // Check video size (max 15MB)
+              if (isVideo) {
+                const sizeInMB = (blob.size / 1024 / 1024).toFixed(2);
+                if (blob.size > 15 * 1024 * 1024) {
+                  setSubmitting(false);
+                  setUploadProgress('');
+                  Alert.alert('Video Too Large', `Video is ${sizeInMB}MB. Maximum 15MB (10-15 seconds).`);
+                  return;
+                }
+              }
 
-            const fileName = isVideo
-              ? `after_video_${Date.now()}_${i}.mp4`
-              : `after_photo_${Date.now()}_${Math.random().toString(36).substring(7)}.jpg`;
+              const metadata = isVideo
+                ? { contentType: 'video/mp4' }
+                : { contentType: 'image/jpeg' };
 
-            const folder = isVideo ? 'videos' : 'images';
-            const storageRef = ref(storage, `${folder}/${auth.currentUser.uid}/${fileName}`);
+              const uploadTask = uploadBytesResumable(storageRef, blob, metadata);
 
-            const response = await fetch(uri);
-            const blob = await response.blob();
+              // Wait for upload to complete
+              const snapshot = await new Promise((resolve, reject) => {
+                uploadTask.on(
+                  'state_changed',
+                  (snap) => {
+                    const progress = Math.round((snap.bytesTransferred / snap.totalBytes) * 100);
+                    setUploadProgress(`Uploading ${currentItem}/${totalItems} (${progress}%)...`);
+                  },
+                  reject,
+                  () => resolve(uploadTask.snapshot)
+                );
+              });
 
-            if (isVideo) {
-              const sizeInMB = (blob.size / 1024 / 1024).toFixed(2);
-              if (blob.size > 15 * 1024 * 1024) {
-                setSubmitting(false);
-                setUploadProgress('');
-                Alert.alert('Video Too Large', `Video is ${sizeInMB}MB. Maximum 15MB (10-15 seconds).`);
-                return;
+              const url = await getDownloadURL(snapshot.ref);
+
+              if (isVideo) {
+                uploadedAfterVideoUrls.push(url);
+              } else {
+                uploadedAfterPhotoUrls.push(url);
               }
             }
 
-            const metadata = isVideo
-              ? { contentType: 'video/mp4' }
-              : { contentType: 'image/jpeg' };
+            setUploadProgress('Saving...');
 
-            const uploadTask = uploadBytesResumable(storageRef, blob, metadata);
+            const updateData = {
+              status: newStatus,
+              resolutionNotes: resolutionNotes.trim(),
+              afterPhotos: uploadedAfterPhotoUrls,
+              afterVideos: uploadedAfterVideoUrls,
+              resolvedAt: newStatus === 'resolved' ? new Date() : null,
+            };
 
-            const uploadPromise = new Promise((resolve, reject) => {
-              uploadTask.on(
-                'state_changed',
-                (snapshot) => {
-                  const progress = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
-                  setUploadProgress(`Uploading ${currentItem}/${totalItems} (${progress}%)...`);
-                },
-                (error) => reject(error),
-                () => resolve(uploadTask.snapshot)
-              );
-            });
+            await updateDoc(doc(db, 'reports', id), updateData);
 
-            let snapshot;
-            await uploadPromise
-              .then((result) => { snapshot = result; })
-              .catch((error) => {
-                setSubmitting(false);
-                setUploadProgress('');
-                Alert.alert('Upload Failed', 'Network issue. Please try again.');
-                return;
-              });
-
-            if (!snapshot) return;
-
-            const url = await getDownloadURL(snapshot.ref);
-
-            if (isVideo) {
-              uploadedAfterVideoUrls.push(url);
-            } else {
-              uploadedAfterPhotoUrls.push(url);
+            // Sync to merged reports if any
+            if (job.duplicateCount > 0) {
+              await syncStatusToMergedReports(id, updateData);
             }
-          }
 
-          setUploadProgress('Saving...');
+            setSubmitting(false);
+            setUploadProgress('');
 
-          const updateData = {
-            status: newStatus,
-            resolutionNotes: resolutionNotes.trim(),
-            afterPhotos: uploadedAfterPhotoUrls,
-            afterVideos: uploadedAfterVideoUrls,
-            resolvedAt: newStatus === 'resolved' ? new Date() : null,
-          };
-
-          await updateDoc(doc(db, 'reports', id), updateData);
-
-          if (job.duplicateCount > 0) {
-            await syncStatusToMergedReports(id, updateData);
-          }
-
-          setSubmitting(false);
-          setUploadProgress('');
-
-          Alert.alert(
-            'Success',
-            newStatus === 'resolved' ? 'Job marked as resolved!' : 'Progress saved!',
-            [{ text: 'OK', onPress: () => router.back() }]
-          );
+            Alert.alert(
+              'Success',
+              newStatus === 'resolved' ? 'Job marked as resolved!' : 'Progress saved!',
+              [{ text: 'OK', onPress: () => router.back() }]
+            );
+          },
         },
-      },
-    ]
-  );
-};
+      ]
+    );
+  };
+
   if (loading) {
     return (
       <View style={styles.center}>
@@ -277,22 +273,18 @@ export default function EngineerJobDetail() {
   return (
     <View style={styles.wrapper}>
       <ReportHeader title="Job Details" />
-
       <StatusTracker status={job.status} />
-
       <ScrollView style={styles.container}>
         <Text style={styles.sectionTitle}>Before Evidence</Text>
         <MediaGallery
           photos={beforePhotos}
           videos={beforeVideos}
         />
-
         <ReportInfoSection report={job} />
-        
         <MergedReportsSection masterReport={job} role="engineer" />
-
         <AssignmentDetails report={job} />
 
+        {/* Reopened state */}
         {job.status === 'reopened' && (
           <View style={styles.reopenedSection}>
             <Text style={styles.sectionTitle}>QA Feedback</Text>
@@ -304,7 +296,6 @@ export default function EngineerJobDetail() {
                 Please fix the issues and resubmit.
               </Text>
             </View>
-
             {job.resolutionNotes && (
               <View style={styles.previousWorkSection}>
                 <Text style={styles.previousWorkTitle}>Previous Work</Text>
@@ -320,7 +311,6 @@ export default function EngineerJobDetail() {
                 </View>
               </View>
             )}
-
             {submitting ? (
               <ActivityIndicator size="large" color="#4F46E5" style={{ marginVertical: 20 }} />
             ) : (
@@ -329,10 +319,10 @@ export default function EngineerJobDetail() {
           </View>
         )}
 
+        {/* In progress state */}
         {job.status === 'in progress' && (
           <View style={styles.resolutionSection}>
             <Text style={styles.sectionTitle}>Resolution</Text>
-
             <Text style={styles.inputLabel}>Job Status</Text>
             <View style={styles.statusButtons}>
               <CustomButton
@@ -346,7 +336,6 @@ export default function EngineerJobDetail() {
                 variant={newStatus === 'resolved' ? 'secondary' : 'default'}
               />
             </View>
-
             <CustomInput
               label="Resolution Notes"
               placeholder="Describe what you did..."
@@ -355,15 +344,12 @@ export default function EngineerJobDetail() {
               multiline
               numberOfLines={4}
             />
-
             <Text style={styles.inputLabel}>After Evidence (Required)</Text>
             <Text style={styles.helperText}>Max 1 video + 4 photos (5 items total)</Text>
-
             <View style={styles.photoButtons}>
               <CustomButton title="Gallery" onPress={handleAfterGalleryPick} variant="secondary" disabled={submitting} />
               <CustomButton title="Camera" onPress={handleAfterCameraPick} variant="secondary" disabled={submitting} />
             </View>
-
             {afterMedia.length > 0 && (
               <>
                 <Text style={styles.afterMediaTitle}>Tap to view fullscreen ({afterMedia.length}/5)</Text>
@@ -375,7 +361,6 @@ export default function EngineerJobDetail() {
                 />
               </>
             )}
-
             {submitting ? (
               <View style={styles.uploadingContainer}>
                 <ActivityIndicator size="large" color="#4F46E5" />
@@ -391,6 +376,7 @@ export default function EngineerJobDetail() {
           </View>
         )}
 
+        {/* Assigned state – just start job button */}
         {job.status === 'assigned' && (
           <View style={styles.startJobContainer}>
             <Text style={styles.instructionText}>
@@ -404,20 +390,19 @@ export default function EngineerJobDetail() {
           </View>
         )}
 
+        {/* Resolved or verified state – show details */}
         {(job.status === 'resolved' || job.status === 'verified') && (
           <View style={styles.resolvedSection}>
             <Text style={styles.sectionTitle}>Resolution Details</Text>
             <View style={styles.infoBox}>
               <Text style={styles.label}>Resolution Notes:</Text>
               <Text style={styles.notesText}>{job.resolutionNotes}</Text>
-
               <View style={{ marginTop: 16 }}>
                 <MediaGallery
                   photos={job.afterPhotos || []}
                   videos={job.afterVideos || (job.afterVideo ? [job.afterVideo] : [])}
                 />
               </View>
-
               {job.status === 'verified' && (
                 <View style={styles.verifiedBadge}>
                   <Text style={styles.verifiedText}>VERIFIED BY QA</Text>

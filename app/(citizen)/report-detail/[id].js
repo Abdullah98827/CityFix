@@ -59,7 +59,7 @@ export default function CitizenReportDetail() {
   }
 
   return (
-    <View style={styles.wrapper}>0
+    <View style={styles.wrapper}>
       <ReportHeader title="Report Details" />
       {!report.isDraft && <StatusTracker status={report.status} />}
 

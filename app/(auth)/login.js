@@ -6,83 +6,97 @@ import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, View } from 're
 import { auth, db } from '../../backend/firebase';
 import CustomButton from '../../components/CustomButton';
 import CustomInput from '../../components/CustomInput';
-import FormMessage from '../../components/FormMessage';
 
 export default function LoginScreen() {
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState('');
-  const [isError, setIsError] = useState(false);
 
   const handleLogin = async () => {
-    setMessage('');
-    setIsError(false);
+    setLoading(true);
 
+    // Basic validation
     if (!email || !password) {
-      setMessage('Please fill in all fields');
-      setIsError(true);
+      Alert.alert('Missing Fields', 'Please fill in both email and password');
+      setLoading(false);
       return;
     }
 
-    setLoading(true);
+    // Try to sign in
+    const userCredential = await signInWithEmailAndPassword(auth, email.trim(), password);
+
+    // If sign in failed, Firebase throws – we catch it below with if/else
+    if (!userCredential || !userCredential.user) {
+      Alert.alert('Login Failed', 'Invalid email or password');
+      setLoading(false);
+      return;
+    }
+
+    const user = userCredential.user;
+
+    // Get user document
+    const userDocRef = doc(db, 'UserMD', user.uid);
+    const userDoc = await getDoc(userDocRef);
+
+    if (!userDoc.exists()) {
+      Alert.alert('Login Error', 'User data not found. Please register again.');
+      setLoading(false);
+      return;
+    }
+
+    const userData = userDoc.data();
+
+    // Check if account is disabled
+    if (userData.isDisabled) {
+      await signOut(auth);
+      Alert.alert(
+        'Account Disabled',
+        'Your account has been disabled by an administrator. Please contact support.',
+        [{ text: 'OK' }]
+      );
+      setLoading(false);
+      return;
+    }
+
+    const userRole = userData.role || 'citizen';
+
+    // Navigate based on role
+    if (userRole === 'citizen') {
+      router.replace('/(citizen)/home');
+    } else if (userRole === 'dispatcher') {
+      router.replace('/(dispatcher)/home');
+    } else if (userRole === 'engineer') {
+      router.replace('/(engineer)/home');
+    } else if (userRole === 'qa') {
+      router.replace('/(qa)/home');
+    } else if (userRole === 'admin') {
+      router.replace('/(admin)/home');
+    } else {
+      Alert.alert('Login Error', 'Role not recognised — please contact admin');
+    }
+
+    setLoading(false);
+  };
+
+  // Wrap the actual call to handle errors with if/else
+  const safeHandleLogin = async () => {
     try {
-      const userCredential = await signInWithEmailAndPassword(auth, email.trim(), password);
-      const user = userCredential.user;
-
-      // Checks if the user is disabled
-      const userDocRef = doc(db, 'UserMD', user.uid);
-      const userDoc = await getDoc(userDocRef);
-
-      if (userDoc.exists()) {
-        const userData = userDoc.data();
-
-        if (userData.isDisabled) {
-          await signOut(auth);
-          Alert.alert(
-            "Account Disabled",
-            "Your account has been disabled by an administrator. Please contact support.",
-            [{ text: "OK" }]
-          );
-          setLoading(false);
-          return;
-        }
-
-        const userRole = userData.role || 'citizen';
-
-        if (userRole === 'citizen') {
-          router.replace('/(citizen)/home');
-        } else if (userRole === 'dispatcher') {
-          router.replace('/(dispatcher)/home');
-        } else if (userRole === 'engineer') {
-          router.replace('/(engineer)/home');
-        } else if (userRole === 'qa') {
-          router.replace('/(qa)/home');
-        } else if (userRole === 'admin') {
-          router.replace('/(admin)/home');
-        } else {
-          setMessage('Role not recognised — contact admin');
-          setIsError(true);
-        }
-      } else {
-        setMessage('User data not found. Please register again.');
-        setIsError(true);
-      }
+      await handleLogin();
     } catch (error) {
-      setIsError(true);
+      let errorMessage = 'Something went wrong. Please try again.';
+
       if (error.code === 'auth/invalid-email') {
-        setMessage('Please enter a valid email address');
-      } else if (error.code === 'auth/user-not-found') {
-        setMessage('Invalid email or password');
-      } else if (error.code === 'auth/wrong-password') {
-        setMessage('Invalid email or password');
-      } else if (error.code === 'auth/invalid-credential') {
-        setMessage('Invalid email or password');
-      } else {
-        setMessage('Something went wrong. Please try again.');
+        errorMessage = 'Please enter a valid email address';
+      } else if (
+        error.code === 'auth/user-not-found' ||
+        error.code === 'auth/wrong-password' ||
+        error.code === 'auth/invalid-credential'
+      ) {
+        errorMessage = 'Invalid email or password';
       }
-    } finally {
+
+      Alert.alert('Login Failed', errorMessage);
       setLoading(false);
     }
   };
@@ -111,17 +125,15 @@ export default function LoginScreen() {
           secureTextEntry
         />
 
-        <FormMessage message={message} isError={isError} />
-
         {loading ? (
           <ActivityIndicator size="large" color="#4F46E5" style={{ marginVertical: 20 }} />
         ) : (
-          <CustomButton title="Sign In" onPress={handleLogin} variant="secondary" />
+          <CustomButton title="Sign In" onPress={safeHandleLogin} variant="secondary" />
         )}
 
         <Text style={styles.footerText}>
-          Don’t have an account?{" "}
-          <Text style={styles.link} onPress={() => router.push("/(auth)/register")}>
+          Don’t have an account?{' '}
+          <Text style={styles.link} onPress={() => router.push('/(auth)/register')}>
             Sign up
           </Text>
         </Text>
@@ -133,36 +145,36 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   container: {
     flexGrow: 1,
-    backgroundColor: "#f5f5f5",
+    backgroundColor: '#f5f5f5',
     padding: 24,
-    justifyContent: "center",
+    justifyContent: 'center',
   },
   header: {
-    alignItems: "center",
+    alignItems: 'center',
     marginBottom: 40,
   },
   appName: {
     fontSize: 36,
-    fontWeight: "bold",
-    color: "#4F46E5",
+    fontWeight: 'bold',
+    color: '#4F46E5',
     marginBottom: 12,
   },
   title: {
     fontSize: 20,
-    fontWeight: "600",
-    color: "#333",
+    fontWeight: '600',
+    color: '#333',
   },
   form: {
-    width: "100%",
+    width: '100%',
   },
   footerText: {
-    textAlign: "center",
+    textAlign: 'center',
     marginTop: 24,
     fontSize: 14,
-    color: "#666",
+    color: '#666',
   },
   link: {
-    color: "#4F46E5",
-    fontWeight: "600",
+    color: '#4F46E5',
+    fontWeight: '600',
   },
 });

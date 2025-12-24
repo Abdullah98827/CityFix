@@ -10,6 +10,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import NotificationsScreen from '../(common)/notifications';
 import { db } from '../../backend/firebase';
 import AppHeader from '../../components/AppHeader';
 import ReportCard from '../../components/ReportCard';
@@ -61,6 +62,7 @@ export default function QAHome() {
   const verifiedCount = allReports.filter(r => r.status === 'verified').length;
   const reopenedCount = allReports.filter(r => r.status === 'reopened').length;
   const allCount = allReports.length;
+  const [unreadCount, setUnreadCount] = useState(0);
 
   if (loading) {
     return (
@@ -72,7 +74,7 @@ export default function QAHome() {
 
   return (
     <View style={styles.container}>
-      <AppHeader title="QA Console" showBack={false} showSignOut={true} />
+      <AppHeader title="QA Console" showBack={false} showSignOut={true} unreadCount={unreadCount} />
 
       <View style={styles.filterContainer}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
@@ -132,6 +134,9 @@ export default function QAHome() {
           showsVerticalScrollIndicator={false}
         />
       )}
+      <View style={styles.hiddenNotifications}>
+        <NotificationsScreen onUnreadCountChange={setUnreadCount} />
+      </View>
     </View>
   );
 }
@@ -179,5 +184,13 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#94a3b8',
     textAlign: 'center',
+  },
+  hiddenNotifications: {
+    position: 'absolute',
+    left: -9999,
+    top: -9999,
+    width: 1,
+    height: 1,
+    opacity: 0,
   },
 });

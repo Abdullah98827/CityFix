@@ -8,7 +8,7 @@ export default function RootLayout() {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user) {
-        // User is signed in → register for push notifications
+        //If the user is signed in it will register for push notifications
         registerForPushNotificationsAsync();
       }
     });

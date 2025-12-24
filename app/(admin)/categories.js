@@ -19,38 +19,44 @@ export default function AdminCategories() {
   const [newCategory, setNewCategory] = useState('');
   const [loading, setLoading] = useState(true);
 
+  // Loads the categories when screen opens
   useEffect(() => {
     const fetchCategories = async () => {
-      try {
-        const docSnap = await getDoc(doc(db, 'ConfigMD', 'categories'));
-        if (docSnap.exists()) {
-          setCategories(docSnap.data().list || []);
-        }
-      } catch {
+      const docSnap = await getDoc(doc(db, 'ConfigMD', 'categories'));
+
+      if (docSnap.exists()) {
+        setCategories(docSnap.data().list || []);
+      } else {
         Alert.alert('Error', 'Failed to load categories');
-      } finally {
-        setLoading(false);
       }
+
+      setLoading(false);
     };
+
     fetchCategories();
   }, []);
 
+  // Adds a new category
   const addCategory = async () => {
     if (!newCategory.trim()) {
       Alert.alert('Error', 'Please enter a category name');
       return;
     }
+
     const updated = [...categories, newCategory.trim()];
-    try {
-      await updateDoc(doc(db, 'ConfigMD', 'categories'), { list: updated });
+
+    const success = await updateDoc(doc(db, 'ConfigMD', 'categories'), { list: updated });
+
+    if (success === undefined) {
       setCategories(updated);
       setNewCategory('');
       Alert.alert('Success', 'Category added');
-    } catch {
+    } else {
       Alert.alert('Error', 'Failed to add category');
     }
   };
 
+  // Removes a category
   const removeCategory = async (index) => {
     Alert.alert(
       'Remove Category',
@@ -62,11 +68,13 @@ export default function AdminCategories() {
           style: 'destructive',
           onPress: async () => {
             const updated = categories.filter((_, i) => i !== index);
-            try {
-              await updateDoc(doc(db, 'ConfigMD', 'categories'), { list: updated });
+
+            const success = await updateDoc(doc(db, 'ConfigMD', 'categories'), { list: updated });
+
+            if (success === undefined) {
               setCategories(updated);
               Alert.alert('Success', 'Category removed');
-            } catch {
+            } else {
               Alert.alert('Error', 'Failed to remove');
             }
           },
@@ -89,6 +97,7 @@ export default function AdminCategories() {
 
       <View style={styles.content}>
         <Text style={styles.title}>Current Categories ({categories.length})</Text>
+
         <FlatList
           data={categories}
           keyExtractor={(_, i) => i.toString()}
@@ -109,6 +118,7 @@ export default function AdminCategories() {
           value={newCategory}
           onChangeText={setNewCategory}
         />
+
         <CustomButton title="Add Category" onPress={addCategory} variant="secondary" />
       </View>
     </View>

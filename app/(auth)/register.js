@@ -4,6 +4,7 @@ import { doc, serverTimestamp, setDoc } from "firebase/firestore";
 import { useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   ScrollView,
   StyleSheet,
   Text,
@@ -12,7 +13,6 @@ import {
 import { auth, db } from "../../backend/firebase";
 import CustomButton from "../../components/CustomButton";
 import CustomInput from "../../components/CustomInput";
-import FormMessage from "../../components/FormMessage";
 
 export default function RegisterScreen() {
   const router = useRouter();
@@ -20,50 +20,76 @@ export default function RegisterScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState("");
-  const [isError, setIsError] = useState(false);
 
   const handleRegister = async () => {
-    setMessage("");
-    setIsError(false);
+    setLoading(true);
 
-    if (!name || !email || !password) {
-      setMessage("Please fill in all fields");
-      setIsError(true);
+    // Basic validation using if/else and alerts
+    if (!name) {
+      Alert.alert("Missing Name", "Please enter your full name");
+      setLoading(false);
+      return;
+    }
+
+    if (!email) {
+      Alert.alert("Missing Email", "Please enter your email address");
+      setLoading(false);
+      return;
+    }
+
+    if (!password) {
+      Alert.alert("Missing Password", "Please enter a password");
+      setLoading(false);
       return;
     }
 
     if (password.length < 6) {
-      setMessage("Password must be at least 6 characters");
-      setIsError(true);
+      Alert.alert("Weak Password", "Password must be at least 6 characters");
+      setLoading(false);
       return;
     }
 
-    setLoading(true);
+    // Try to create the user
+    const userCredential = await createUserWithEmailAndPassword(auth, email.trim(), password);
+
+    if (!userCredential || !userCredential.user) {
+      Alert.alert("Registration Failed", "Something went wrong. Please try again.");
+      setLoading(false);
+      return;
+    }
+
+    const user = userCredential.user;
+
+    // Save user data to Firestore
+    await setDoc(doc(db, "UserMD", user.uid), {
+      name: name.trim(),
+      email: user.email,
+      role: "citizen",
+      isDisabled: false,
+      createdAt: serverTimestamp(),
+    });
+
+    // Success – go to login
+    router.replace("/(auth)/login");
+    setLoading(false);
+  };
+
+  // Safe wrapper to catch Firebase errors
+  const safeHandleRegister = async () => {
     try {
-      const userCredential = await createUserWithEmailAndPassword(auth, email.trim(), password);
-      const user = userCredential.user;
-
-      await setDoc(doc(db, "UserMD", user.uid), {
-        name: name.trim(),
-        email: user.email,
-        role: "citizen",
-        createdAt: serverTimestamp(),
-      });
-
-      router.replace("/(auth)/login");
+      await handleRegister();
     } catch (error) {
-      setIsError(true);
+      let errorMessage = "Something went wrong. Please try again.";
+
       if (error.code === "auth/email-already-in-use") {
-        setMessage("This email is already registered");
+        errorMessage = "This email is already registered";
       } else if (error.code === "auth/invalid-email") {
-        setMessage("Please enter a valid email address");
+        errorMessage = "Please enter a valid email address";
       } else if (error.code === "auth/weak-password") {
-        setMessage("Password is too weak (minimum 6 characters)");
-      } else {
-        setMessage("Something went wrong. Please try again.");
+        errorMessage = "Password is too weak (minimum 6 characters)";
       }
-    } finally {
+
+      Alert.alert("Registration Failed", errorMessage);
       setLoading(false);
     }
   };
@@ -98,12 +124,10 @@ export default function RegisterScreen() {
           secureTextEntry
         />
 
-        <FormMessage message={message} isError={isError} />
-
         {loading ? (
           <ActivityIndicator size="large" color="#4F46E5" style={{ marginVertical: 20 }} />
         ) : (
-          <CustomButton title="Create Account" onPress={handleRegister} variant="secondary" />
+          <CustomButton title="Create Account" onPress={safeHandleRegister} variant="secondary" />
         )}
 
         <Text style={styles.footerText}>
@@ -124,15 +148,32 @@ const styles = StyleSheet.create({
     padding: 24,
     justifyContent: "center",
   },
-  header: { alignItems: "center", marginBottom: 40 },
-  appName: { fontSize: 36, fontWeight: "bold", color: "#4F46E5", marginBottom: 12 },
-  title: { fontSize: 20, fontWeight: "600", color: "#333" },
-  form: { width: "100%" },
+  header: {
+    alignItems: "center",
+    marginBottom: 40,
+  },
+  appName: {
+    fontSize: 36,
+    fontWeight: "bold",
+    color: "#4F46E5",
+    marginBottom: 12,
+  },
+  title: {
+    fontSize: 20,
+    fontWeight: "600",
+    color: "#333",
+  },
+  form: {
+    width: "100%",
+  },
   footerText: {
     textAlign: "center",
     marginTop: 24,
     fontSize: 14,
     color: "#666",
   },
-  link: { color: "#4F46E5", fontWeight: "600" },
+  link: {
+    color: "#4F46E5",
+    fontWeight: "600",
+  },
 });
