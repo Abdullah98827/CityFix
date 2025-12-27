@@ -1,5 +1,5 @@
 import { useRouter } from 'expo-router';
-import { collection, onSnapshot, orderBy, query } from 'firebase/firestore';
+import { collection, onSnapshot, orderBy, query, where } from 'firebase/firestore';
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -11,7 +11,7 @@ import {
   View,
 } from 'react-native';
 import NotificationsScreen from '../(common)/notifications';
-import { db } from '../../backend/firebase';
+import { auth, db } from '../../backend/firebase';
 import AppHeader from '../../components/AppHeader';
 import ReportCard from '../../components/ReportCard';
 
@@ -24,7 +24,13 @@ export default function QAHome() {
   const unsubscribeRef = useRef(null);
 
   useEffect(() => {
-    const q = query(collection(db, 'reports'), orderBy('createdAt', 'desc'));
+    if (!auth.currentUser) {
+      return;
+    }
+    const q = query(
+      collection(db, 'reports'),
+      where('isDeleted', '==', false),
+      orderBy('createdAt', 'desc'));
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const reportsList = [];

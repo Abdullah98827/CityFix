@@ -1,3 +1,4 @@
+// app/(dispatcher)/report-detail/[id].js
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
   collection,
@@ -26,6 +27,7 @@ import MergedReportsSection from '../../../components/MergedReportsSection';
 import ReportHeader from '../../../components/ReportHeader';
 import ReportInfoSection from '../../../components/ReportInfoSection';
 import StatusTracker from '../../../components/StatusTracker';
+import { logAction } from '../../../utils/logger';
 import { syncStatusToMergedReports } from '../../../utils/statusSyncHelper';
 
 export default function DispatcherReportDetail() {
@@ -37,7 +39,6 @@ export default function DispatcherReportDetail() {
   const [engineers, setEngineers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-
   const [selectedEngineer, setSelectedEngineer] = useState('');
   const [priority, setPriority] = useState('medium');
   const [deadline, setDeadline] = useState('');
@@ -49,7 +50,14 @@ export default function DispatcherReportDetail() {
       // Get the main report
       const reportDoc = await getDoc(doc(db, 'reports', id));
       if (reportDoc.exists()) {
-        setReport({ id: reportDoc.id, ...reportDoc.data() });
+        const data = reportDoc.data();
+        // Check if report is soft-deleted
+        if (data.isDeleted) {
+          Alert.alert('Report Deleted', 'This report has been removed by an admin.');
+          router.back();
+          return;
+        }
+        setReport({ id: reportDoc.id, ...data });
       } else {
         Alert.alert('Error', 'Report not found');
       }
@@ -65,7 +73,6 @@ export default function DispatcherReportDetail() {
         engineersList.push({ id: doc.id, ...doc.data() });
       });
       setEngineers(engineersList);
-
       setLoading(false);
     };
 
@@ -127,6 +134,13 @@ export default function DispatcherReportDetail() {
               await syncStatusToMergedReports(id, updateData);
             }
 
+            // Log the assignment
+            logAction(
+              'report_assigned',
+              id,
+              `Assigned to: ${selectedEngineerData?.name}, Priority: ${priority}, Deadline: ${deadline}`
+            );
+
             setSubmitting(false);
             Alert.alert(
               'Success',
@@ -170,7 +184,6 @@ export default function DispatcherReportDetail() {
         />
         <ReportInfoSection report={report} />
         <MergedReportsSection masterReport={report} role="dispatcher" />
-
         {/* Assignment form – only shown when report is submitted */}
         {report.status === 'submitted' && (
           <View style={styles.workOrderSection}>
@@ -199,7 +212,6 @@ export default function DispatcherReportDetail() {
                 ))}
               </View>
             )}
-
             <Text style={styles.inputLabel}>Priority</Text>
             <View style={styles.priorityButtons}>
               {['low', 'medium', 'high', 'urgent'].map((p) => (
@@ -216,14 +228,12 @@ export default function DispatcherReportDetail() {
                 </TouchableOpacity>
               ))}
             </View>
-
             <CustomInput
               label="Deadline (e.g. 2025-12-31)"
               placeholder="YYYY-MM-DD"
               value={deadline}
               onChangeText={setDeadline}
             />
-
             <CustomInput
               label="Dispatcher Notes (optional)"
               placeholder="Add any instructions or notes..."
@@ -232,7 +242,6 @@ export default function DispatcherReportDetail() {
               multiline
               numberOfLines={4}
             />
-
             {submitting ? (
               <ActivityIndicator size="large" color="#4F46E5" style={{ marginVertical: 20 }} />
             ) : (
@@ -240,7 +249,6 @@ export default function DispatcherReportDetail() {
             )}
           </View>
         )}
-
         {/* Show assignment info if already assigned */}
         {report.status !== 'submitted' && (
           <View style={styles.assignedInfo}>
@@ -256,7 +264,9 @@ export default function DispatcherReportDetail() {
               </View>
               <View style={styles.infoRow}>
                 <Text style={styles.label}>Deadline:</Text>
-                <Text style={styles.value}>{report.deadline}</Text>
+                <Text style={styles.value}>
+                  {report.deadline ? report.deadline.toDate().toLocaleDateString('en-GB') : 'Not set'}
+                </Text>
               </View>
               {report.dispatcherNotes && (
                 <View style={styles.notesBox}>
@@ -267,7 +277,6 @@ export default function DispatcherReportDetail() {
             </View>
           </View>
         )}
-
         <View style={{ height: 40 }} />
       </ScrollView>
     </View>
@@ -282,15 +291,15 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 22, fontWeight: '800', color: '#1e293b', marginBottom: 16 },
   inputLabel: { fontSize: 15, fontWeight: '600', color: '#333', marginBottom: 12 },
   engineerList: { marginBottom: 24 },
-  engineerCard: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    backgroundColor: '#fff', 
-    padding: 16, 
-    borderRadius: 12, 
-    marginBottom: 12, 
-    borderWidth: 2, 
-    borderColor: '#e2e8f0' 
+  engineerCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 12,
+    borderWidth: 2,
+    borderColor: '#e2e8f0',
   },
   engineerCardSelected: { borderColor: '#4F46E5', backgroundColor: '#f5f3ff' },
   engineerAvatar: { width: 50, height: 50, borderRadius: 25, backgroundColor: '#e0e7ff', marginRight: 16 },
@@ -300,14 +309,14 @@ const styles = StyleSheet.create({
   checkMark: { fontSize: 24, color: '#4F46E5', fontWeight: 'bold' },
   noEngineers: { fontSize: 16, color: '#94a3b8', textAlign: 'center', marginBottom: 24 },
   priorityButtons: { flexDirection: 'row', gap: 8, marginBottom: 24 },
-  priorityBtn: { 
-    flex: 1, 
-    paddingVertical: 12, 
-    borderRadius: 12, 
-    backgroundColor: '#f1f5f9', 
-    alignItems: 'center', 
-    borderWidth: 2, 
-    borderColor: '#e2e8f0' 
+  priorityBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: '#f1f5f9',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#e2e8f0',
   },
   priorityBtnSelected: { backgroundColor: '#4F46E5', borderColor: '#4F46E5' },
   priorityText: { fontSize: 13, fontWeight: '700', color: '#64748b' },

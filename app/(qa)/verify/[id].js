@@ -1,5 +1,5 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, onSnapshot, updateDoc } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -7,6 +7,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
 } from 'react-native';
 import { db } from '../../../backend/firebase';
@@ -18,22 +19,51 @@ import MergedReportsSection from '../../../components/MergedReportsSection';
 import ReportHeader from '../../../components/ReportHeader';
 import ReportInfoSection from '../../../components/ReportInfoSection';
 import StatusTracker from '../../../components/StatusTracker';
+import { logAction } from '../../../utils/logger';
 import { syncStatusToMergedReports } from '../../../utils/statusSyncHelper';
 
 export default function QAVerifyScreen() {
   const { id } = useLocalSearchParams();
   const router = useRouter();
+
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
+  const [submitting, setSubmitting] = useState(false); 
   const [qaFeedback, setQaFeedback] = useState('');
-  const [reopenReason, setReopenReason] = useState('');
+  const [selectedReason, setSelectedReason] = useState('');
+  const [reopenNotes, setReopenNotes] = useState('');
+  const [reopenReasons, setReopenReasons] = useState([]);
+  const [showReopenSection, setShowReopenSection] = useState(false);
+
+  // Load reopen reasons from ConfigMD
+  useEffect(() => {
+    const unsubscribe = onSnapshot(doc(db, 'ConfigMD', 'reopenReasons'), (doc) => {
+      if (doc.exists() && doc.data().list) {
+        setReopenReasons(doc.data().list);
+      } else {
+        setReopenReasons([
+          'Incomplete Fix',
+          'After Media Not Clear',
+          'Wrong Location',
+          'Poor Cleanup/Quality',
+          'Issue Recurred',
+          'Other (Explain Below)'
+        ]);
+      }
+    });
+    return unsubscribe;
+  }, []);
 
   useEffect(() => {
     const fetchReport = async () => {
       const reportDoc = await getDoc(doc(db, 'reports', id));
       if (reportDoc.exists()) {
         const data = reportDoc.data();
+        if (data.isDeleted) {
+          Alert.alert('Report Deleted', 'This report has been removed by an admin.');
+          router.back();
+          return;
+        }
         setReport({
           id: reportDoc.id,
           ...data,
@@ -69,6 +99,10 @@ export default function QAVerifyScreen() {
             if (report.duplicateCount > 0) {
               await syncStatusToMergedReports(id, updateData);
             }
+
+            // Log verification
+            logAction('report_verified', id, `Feedback: ${qaFeedback.trim() || 'Approved'}`);
+
             setSubmitting(false);
             Alert.alert('Success', 'Report verified successfully!', [
               { text: 'OK', onPress: () => router.back() }
@@ -80,8 +114,8 @@ export default function QAVerifyScreen() {
   };
 
   const handleReopen = () => {
-    if (!reopenReason.trim()) {
-      Alert.alert('Missing Information', 'Please provide a reason for reopening');
+    if (!selectedReason) {
+      Alert.alert('Missing Information', 'Please select a reason for reopening');
       return;
     }
     Alert.alert(
@@ -96,14 +130,19 @@ export default function QAVerifyScreen() {
             setSubmitting(true);
             const updateData = {
               status: 'reopened',
-              reopenReason: reopenReason.trim(),
+              reopenReason: selectedReason,
               qaFeedback: qaFeedback.trim(),
+              reopenNotes: reopenNotes.trim(),
               reopenedAt: new Date(),
             };
             await updateDoc(doc(db, 'reports', id), updateData);
             if (report.duplicateCount > 0) {
               await syncStatusToMergedReports(id, updateData);
             }
+
+            // Log reopen
+            logAction('report_reopened', id, `Reason: ${selectedReason}${reopenNotes.trim() ? ` - ${reopenNotes.trim()}` : ''}`);
+
             setSubmitting(false);
             Alert.alert('Success', 'Report reopened and sent back to engineer', [
               { text: 'OK', onPress: () => router.back() }
@@ -135,7 +174,6 @@ export default function QAVerifyScreen() {
       <ReportHeader title="Verify Report" />
       <StatusTracker status={report.status} />
       <ScrollView style={styles.container}>
-        
         {/* Side-by-side Before / After */}
         <View style={styles.comparisonContainer}>
           {/* BEFORE Evidence */}
@@ -146,7 +184,6 @@ export default function QAVerifyScreen() {
             </View>
             <MediaGallery photos={report.photoUrls} videos={report.videoUrls} />
           </View>
-
           {/* AFTER Evidence */}
           <View style={styles.sideBox}>
             <View style={styles.sideHeader}>
@@ -163,11 +200,9 @@ export default function QAVerifyScreen() {
             )}
           </View>
         </View>
-
         <ReportInfoSection report={report} />
         <MergedReportsSection masterReport={report} role="qa" />
         <AssignmentDetails report={report} />
-
         <View style={styles.resolutionSection}>
           <Text style={styles.sectionTitle}>Engineer`s Resolution</Text>
           <View style={styles.infoBox}>
@@ -185,7 +220,6 @@ export default function QAVerifyScreen() {
             )}
           </View>
         </View>
-
         {report.status === 'resolved' && (
           <View style={styles.verificationSection}>
             <Text style={styles.sectionTitle}>Quality Verification</Text>
@@ -193,36 +227,69 @@ export default function QAVerifyScreen() {
               Review the before and after evidence above.
             </Text>
             <CustomInput
-              label="QA Feedback (optional)"
+              label="QA Feedback (Optional)"
               placeholder="Add any comments or observations..."
               value={qaFeedback}
               onChangeText={setQaFeedback}
               multiline
               numberOfLines={3}
             />
-            <CustomInput
-              label="Reason for Reopening (required if rejecting)"
-              placeholder="e.g. After photos don't show the fix"
-              value={reopenReason}
-              onChangeText={setReopenReason}
-              multiline
-              numberOfLines={3}
-            />
-            {submitting ? (
-              <ActivityIndicator size="large" color="#4F46E5" style={{ marginVertical: 20 }} />
-            ) : (
-              <View style={styles.actionButtons}>
-                <View style={styles.buttonWrapper}>
-                  <CustomButton title="Verify" onPress={handleVerify} variant="secondary" />
+            <View style={styles.actionButtons}>
+              <View style={styles.buttonWrapper}>
+                <CustomButton title="Verify" onPress={handleVerify} variant="secondary" />
+              </View>
+              <View style={styles.buttonWrapper}>
+                <CustomButton
+                  title={showReopenSection ? "Cancel Reopen" : "Reopen Report"}
+                  onPress={() => setShowReopenSection(!showReopenSection)}
+                  variant="danger"
+                />
+              </View>
+            </View>
+            {showReopenSection && (
+              <View style={styles.reopenExpanded}>
+                <Text style={styles.inputLabel}>Reopen Reason (required)</Text>
+                <View style={styles.reasonsContainer}>
+                  {reopenReasons.map((reason) => (
+                    <TouchableOpacity
+                      key={reason}
+                      style={[
+                        styles.reasonButton,
+                        selectedReason === reason && styles.reasonButtonSelected,
+                      ]}
+                      onPress={() => setSelectedReason(reason)}
+                    >
+                      <Text
+                        style={[
+                          styles.reasonText,
+                          selectedReason === reason && styles.reasonTextSelected,
+                        ]}
+                      >
+                        {reason}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
                 </View>
-                <View style={styles.buttonWrapper}>
-                  <CustomButton title="Reopen" onPress={handleReopen} variant="danger" />
-                </View>
+                {selectedReason === 'Other (Explain Below)' && (
+                  <CustomInput
+                    label="Explain Reason"
+                    placeholder="Provide details..."
+                    value={reopenNotes}
+                    onChangeText={setReopenNotes}
+                    multiline
+                    numberOfLines={4}
+                  />
+                )}
+                <CustomButton
+                  title="Submit Reopen"
+                  onPress={handleReopen}
+                  variant="danger"
+                  disabled={!selectedReason}
+                />
               </View>
             )}
           </View>
         )}
-
         {(report.status === 'verified' || report.status === 'reopened') && (
           <View style={styles.decisionSection}>
             <Text style={styles.sectionTitle}>QA Decision</Text>
@@ -262,7 +329,6 @@ export default function QAVerifyScreen() {
             </View>
           </View>
         )}
-
         <View style={{ height: 40 }} />
       </ScrollView>
     </View>
@@ -273,7 +339,6 @@ const styles = StyleSheet.create({
   wrapper: { flex: 1, backgroundColor: '#fff' },
   container: { flex: 1, backgroundColor: '#fff' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-
   comparisonContainer: {
     flexDirection: 'row',
     paddingHorizontal: 16,
@@ -319,7 +384,6 @@ const styles = StyleSheet.create({
     marginTop: 8,
     textAlign: 'center',
   },
-
   resolutionSection: { paddingHorizontal: 24, paddingBottom: 16 },
   verificationSection: { paddingHorizontal: 24, paddingBottom: 24, backgroundColor: '#f8fafc', paddingTop: 24 },
   decisionSection: { paddingHorizontal: 24, paddingBottom: 24 },
@@ -340,4 +404,36 @@ const styles = StyleSheet.create({
   reopenText: { fontSize: 15, color: '#991b1b', marginTop: 8, lineHeight: 22, fontWeight: '500' },
   decisionDate: { fontSize: 13, color: '#64748b', marginTop: 12, textAlign: 'center', fontStyle: 'italic' },
   error: { fontSize: 18, color: '#dc2626' },
+  inputLabel: { fontSize: 15, fontWeight: '600', color: '#333', marginBottom: 12 },
+  reopenExpanded: {
+    marginTop: 20,
+    padding: 16,
+    backgroundColor: '#fef2f2',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#fecaca',
+  },
+  reasonsContainer: {
+    marginBottom: 16,
+  },
+  reasonButton: {
+    padding: 14,
+    borderRadius: 12,
+    backgroundColor: '#f1f5f9',
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  reasonButtonSelected: {
+    backgroundColor: '#4F46E5',
+    borderColor: '#4F46E5',
+  },
+  reasonText: {
+    fontSize: 15,
+    color: '#64748b',
+    fontWeight: '500',
+  },
+  reasonTextSelected: {
+    color: '#fff',
+  },
 });

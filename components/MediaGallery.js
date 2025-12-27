@@ -10,6 +10,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { auth } from '../backend/firebase';
 
 const { width } = Dimensions.get('window');
 
@@ -20,6 +21,11 @@ export default function MediaGallery({
   onRemove,
   showRemove = false
 }) {
+  // Skip rendering if user is signed out
+  if (!auth.currentUser) {
+    return null;
+  }
+
   const [fullscreenIndex, setFullscreenIndex] = useState(-1);
 
   const media = [];
@@ -106,23 +112,18 @@ export default function MediaGallery({
           >
             <Text style={styles.closeText}>✕</Text>
           </TouchableOpacity>
-
           {fullscreenIndex >= 0 && media[fullscreenIndex] && (
             <>
-              {/* Left Arrow */}
               {fullscreenIndex > 0 && (
                 <TouchableOpacity style={[styles.navArrow, styles.leftArrow]} onPress={goPrevious}>
                   <Text style={styles.arrowText}>‹</Text>
                 </TouchableOpacity>
               )}
-
-              {/* Right Arrow */}
               {fullscreenIndex < media.length - 1 && (
                 <TouchableOpacity style={[styles.navArrow, styles.rightArrow]} onPress={goNext}>
                   <Text style={styles.arrowText}>›</Text>
                 </TouchableOpacity>
               )}
-
               <View style={styles.fullscreenContent}>
                 {media[fullscreenIndex].type === 'video' ? (
                   <VideoPlayerFullscreen uri={media[fullscreenIndex].uri} />
@@ -152,6 +153,7 @@ function VideoPlayerFullscreen({ uri }) {
     player.loop = true;
     player.play();
   });
+
   return (
     <VideoView
       style={styles.fullscreenVideo}

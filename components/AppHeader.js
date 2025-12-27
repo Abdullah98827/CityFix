@@ -3,10 +3,10 @@ import { useRouter } from 'expo-router';
 import { signOut } from 'firebase/auth';
 import { Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { auth } from '../backend/firebase';
+import { logAction } from '../utils/logger';
 
 export default function AppHeader({
   title = 'CityFix',
-  showBack = false,
   showSignOut = true,
   showNotifications = true,
   unreadCount = 0,
@@ -24,6 +24,9 @@ export default function AppHeader({
           text: 'Sign Out',
           style: 'destructive',
           onPress: async () => {
+            // Log logout before signing out
+            logAction('user_logged_out', auth.currentUser?.uid || 'unknown');
+
             await signOut(auth);
             router.replace('/(auth)/login');
           },
@@ -44,7 +47,6 @@ export default function AppHeader({
     <View style={styles.header}>
       {/* Title on the far left */}
       <Text style={styles.title}>{title}</Text>
-
       {/* Right icons */}
       <View style={styles.rightContainer}>
         {showNotifications && (
@@ -59,7 +61,6 @@ export default function AppHeader({
             )}
           </TouchableOpacity>
         )}
-
         {showSignOut && (
           <TouchableOpacity style={styles.iconBtn} onPress={handleSignOut}>
             <Ionicons name="log-out-outline" size={28} color="#fff" />

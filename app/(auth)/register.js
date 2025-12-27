@@ -13,9 +13,11 @@ import {
 import { auth, db } from "../../backend/firebase";
 import CustomButton from "../../components/CustomButton";
 import CustomInput from "../../components/CustomInput";
+import { logAction } from "../../utils/logger";
 
 export default function RegisterScreen() {
   const router = useRouter();
+
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -30,19 +32,16 @@ export default function RegisterScreen() {
       setLoading(false);
       return;
     }
-
     if (!email) {
       Alert.alert("Missing Email", "Please enter your email address");
       setLoading(false);
       return;
     }
-
     if (!password) {
       Alert.alert("Missing Password", "Please enter a password");
       setLoading(false);
       return;
     }
-
     if (password.length < 6) {
       Alert.alert("Weak Password", "Password must be at least 6 characters");
       setLoading(false);
@@ -51,7 +50,6 @@ export default function RegisterScreen() {
 
     // Try to create the user
     const userCredential = await createUserWithEmailAndPassword(auth, email.trim(), password);
-
     if (!userCredential || !userCredential.user) {
       Alert.alert("Registration Failed", "Something went wrong. Please try again.");
       setLoading(false);
@@ -69,6 +67,9 @@ export default function RegisterScreen() {
       createdAt: serverTimestamp(),
     });
 
+    // Log registration
+    logAction('user_registered', user.uid, `Email: ${user.email}, Role: citizen`);
+
     // Success – go to login
     router.replace("/(auth)/login");
     setLoading(false);
@@ -80,7 +81,6 @@ export default function RegisterScreen() {
       await handleRegister();
     } catch (error) {
       let errorMessage = "Something went wrong. Please try again.";
-
       if (error.code === "auth/email-already-in-use") {
         errorMessage = "This email is already registered";
       } else if (error.code === "auth/invalid-email") {
@@ -88,7 +88,6 @@ export default function RegisterScreen() {
       } else if (error.code === "auth/weak-password") {
         errorMessage = "Password is too weak (minimum 6 characters)";
       }
-
       Alert.alert("Registration Failed", errorMessage);
       setLoading(false);
     }
@@ -100,7 +99,6 @@ export default function RegisterScreen() {
         <Text style={styles.appName}>CityFix</Text>
         <Text style={styles.title}>Create your account</Text>
       </View>
-
       <View style={styles.form}>
         <CustomInput
           label="Full Name"
@@ -123,13 +121,11 @@ export default function RegisterScreen() {
           onChangeText={setPassword}
           secureTextEntry
         />
-
         {loading ? (
           <ActivityIndicator size="large" color="#4F46E5" style={{ marginVertical: 20 }} />
         ) : (
           <CustomButton title="Create Account" onPress={safeHandleRegister} variant="secondary" />
         )}
-
         <Text style={styles.footerText}>
           Already have an account?{" "}
           <Text style={styles.link} onPress={() => router.push("/(auth)/login")}>

@@ -14,9 +14,12 @@ import {
 import NotificationsScreen from '../(common)/notifications';
 import { db } from '../../backend/firebase';
 import AppHeader from '../../components/AppHeader';
+import CustomButton from '../../components/CustomButton';
+import { logAction } from '../../utils/logger'; // <-- added import
 
 export default function AdminHome() {
   const router = useRouter();
+
   const [users, setUsers] = useState([]);
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -57,7 +60,6 @@ export default function AdminHome() {
       Alert.alert("Blocked", "Admins cannot be changed");
       return;
     }
-
     Alert.alert(
       `${user.name || user.email}`,
       "Choose an action",
@@ -81,23 +83,32 @@ export default function AdminHome() {
       "Change Role",
       `Select new role for ${user.name || user.email}`,
       [
-        { text: "Citizen", onPress: () => updateRole(user.id, 'citizen') },
-        { text: "Dispatcher", onPress: () => updateRole(user.id, 'dispatcher') },
-        { text: "Engineer", onPress: () => updateRole(user.id, 'engineer') },
-        { text: "QA", onPress: () => updateRole(user.id, 'qa') },
+        { text: "Citizen", onPress: () => updateRole(user.id, 'citizen', user.role) },
+        { text: "Dispatcher", onPress: () => updateRole(user.id, 'dispatcher', user.role) },
+        { text: "Engineer", onPress: () => updateRole(user.id, 'engineer', user.role) },
+        { text: "QA", onPress: () => updateRole(user.id, 'qa', user.role) },
         { text: "Cancel", style: "cancel" },
       ]
     );
   };
 
-  const updateRole = async (userId, role) => {
-    await updateDoc(doc(db, 'UserMD', userId), { role });
+  const updateRole = async (userId, newRole, oldRole) => {
+    await updateDoc(doc(db, 'UserMD', userId), { role: newRole });
+
+    // Log role change
+    logAction('user_role_changed', userId, `Changed from ${oldRole || 'unknown'} to ${newRole}`);
+
     Alert.alert("Success", "Role updated");
   };
 
   const toggleDisable = async (user) => {
-    await updateDoc(doc(db, 'UserMD', user.id), { isDisabled: !user.isDisabled });
-    Alert.alert("Success", `Account ${user.isDisabled ? "enabled" : "disabled"}`);
+    const newState = !user.isDisabled;
+    await updateDoc(doc(db, 'UserMD', user.id), { isDisabled: newState });
+
+    // Log enable/disable
+    logAction('user_account_toggled', user.id, `Account ${newState ? 'disabled' : 'enabled'}`);
+
+    Alert.alert("Success", `Account ${newState ? "disabled" : "enabled"}`);
   };
 
   const addCategory = async () => {
@@ -112,6 +123,10 @@ export default function AdminHome() {
             if (text && text.trim()) {
               const newList = [...categories, text.trim()];
               await updateDoc(doc(db, 'ConfigMD', 'categories'), { list: newList });
+
+              // Log category added
+              logAction('category_added', null, `Added: ${text.trim()}`);
+
               Alert.alert("Success", "Category added");
             }
           },
@@ -131,8 +146,13 @@ export default function AdminHome() {
           text: "Remove",
           style: "destructive",
           onPress: async () => {
+            const removedCategory = categories[index];
             const newList = categories.filter((_, i) => i !== index);
             await updateDoc(doc(db, 'ConfigMD', 'categories'), { list: newList });
+
+            // Log category removed
+            logAction('category_removed', null, `Removed: ${removedCategory}`);
+
             Alert.alert("Success", "Category removed");
           },
         },
@@ -157,7 +177,6 @@ export default function AdminHome() {
           )}
         </View>
       </View>
-
       {item.role !== 'admin' && (
         <TouchableOpacity onPress={() => openUserOptions(item)} style={styles.dots}>
           <Text style={styles.dotsText}>⋮</Text>
@@ -176,9 +195,7 @@ export default function AdminHome() {
 
   return (
     <View style={styles.container}>
-      <AppHeader title="Admin Panel" showBack={false} showSignOut={true} unreadCount={unreadCount}
-       />
-
+      <AppHeader title="Admin Panel" showBack={false} showSignOut={true} unreadCount={unreadCount} />
       <View style={styles.tabContainer}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
           <TouchableOpacity
@@ -189,13 +206,37 @@ export default function AdminHome() {
               Users ({users.length})
             </Text>
           </TouchableOpacity>
-
+          <TouchableOpacity
+            style={[styles.tab, activeTab === 'manage-reports' && styles.tabActive]}
+            onPress={() => setActiveTab('manage-reports')}
+          >
+            <Text style={[styles.tabText, activeTab === 'manage-reports' && styles.tabTextActive]}>
+              Manage Reports
+            </Text>
+          </TouchableOpacity>
           <TouchableOpacity
             style={[styles.tab, activeTab === 'categories' && styles.tabActive]}
             onPress={() => setActiveTab('categories')}
           >
             <Text style={[styles.tabText, activeTab === 'categories' && styles.tabTextActive]}>
               Categories ({categories.length})
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tab, activeTab === 'zones' && styles.tabActive]}
+            onPress={() => setActiveTab('zones')}
+          >
+            <Text style={[styles.tabText, activeTab === 'zones' && styles.tabTextActive]}>
+              Zones
+            </Text>
+          </TouchableOpacity>
+          {/* Added Logs tab */}
+          <TouchableOpacity
+            style={[styles.tab, activeTab === 'logs' && styles.tabActive]}
+            onPress={() => setActiveTab('logs')}
+          >
+            <Text style={[styles.tabText, activeTab === 'logs' && styles.tabTextActive]}>
+              Activity Logs
             </Text>
           </TouchableOpacity>
         </ScrollView>
@@ -210,6 +251,21 @@ export default function AdminHome() {
         />
       )}
 
+      {activeTab === 'manage-reports' && (
+        <View style={styles.zonesContainer}>
+          <View style={styles.zonesCard}>
+            <Text style={styles.zonesTitle}>Manage Reports</Text>
+            <Text style={styles.zonesDesc}>View all citizen reports and delete if needed</Text>
+            <CustomButton
+              title="Open Reports Manager"
+              onPress={() => router.push('/(admin)/manage-reports')}
+              variant="secondary"
+              style={{ marginTop: 20 }}
+            />
+          </View>
+        </View>
+      )}
+
       {activeTab === 'categories' && (
         <ScrollView contentContainerStyle={styles.categoriesContainer}>
           <View style={styles.categoriesHeader}>
@@ -218,7 +274,6 @@ export default function AdminHome() {
               <Text style={styles.addBtnText}>+ Add</Text>
             </TouchableOpacity>
           </View>
-
           {categories.length === 0 ? (
             <Text style={styles.emptyText}>No categories</Text>
           ) : (
@@ -233,10 +288,41 @@ export default function AdminHome() {
           )}
         </ScrollView>
       )}
+
+      {activeTab === 'zones' && (
+        <View style={styles.zonesContainer}>
+          <View style={styles.zonesCard}>
+            <Text style={styles.zonesTitle}>Manage Zones</Text>
+            <Text style={styles.zonesDesc}>Create and delete city zones</Text>
+            <CustomButton
+              title="Open Zones Manager"
+              onPress={() => router.push('/(admin)/zones')}
+              variant="secondary"
+              style={{ marginTop: 20 }}
+            />
+          </View>
+        </View>
+      )}
+
+      {/* Logs tab content */}
+      {activeTab === 'logs' && (
+        <View style={styles.zonesContainer}>
+          <View style={styles.zonesCard}>
+            <Text style={styles.zonesTitle}>Activity Logs</Text>
+            <Text style={styles.zonesDesc}>View all system actions and changes</Text>
+            <CustomButton
+              title="Open Logs"
+              onPress={() => router.push('/(admin)/logs')}
+              variant="secondary"
+              style={{ marginTop: 20 }}
+            />
+          </View>
+        </View>
+      )}
+
       <View style={styles.hiddenNotifications}>
         <NotificationsScreen onUnreadCountChange={setUnreadCount} />
       </View>
-
     </View>
   );
 }
@@ -339,6 +425,35 @@ const styles = StyleSheet.create({
   categoryText: { fontSize: 16, color: '#1e293b' },
   removeText: { color: '#dc2626', fontWeight: '600' },
   emptyText: { fontSize: 18, color: '#64748b', textAlign: 'center', marginTop: 40 },
+  zonesContainer: {
+    padding: 16,
+  },
+  zonesCard: {
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    padding: 32,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.1,
+    shadowRadius: 16,
+    elevation: 10,
+    width: '100%',
+  },
+  zonesTitle: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: '#1e293b',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  zonesDesc: {
+    fontSize: 16,
+    color: '#64748b',
+    marginBottom: 24,
+    textAlign: 'center',
+    lineHeight: 24,
+  },
   hiddenNotifications: {
     position: 'absolute',
     left: -9999,

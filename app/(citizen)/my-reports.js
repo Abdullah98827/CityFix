@@ -1,5 +1,5 @@
 import { useRouter } from 'expo-router';
-import { collection, deleteDoc, doc, onSnapshot, orderBy, query, where } from 'firebase/firestore';
+import { collection, deleteDoc, doc, getDocs, limit, onSnapshot, orderBy, query, startAfter, where } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -16,10 +16,14 @@ import ReportHeader from '../../components/ReportHeader';
 
 export default function MyReports() {
   const router = useRouter();
+
   const [drafts, setDrafts] = useState([]);
   const [submittedReports, setSubmittedReports] = useState([]);
+  const [lastVisibleSubmitted, setLastVisibleSubmitted] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [activeTab, setActiveTab] = useState('submitted');
+  const PAGE_SIZE = 10;
 
   useEffect(() => {
     if (!auth.currentUser) {
@@ -27,18 +31,14 @@ export default function MyReports() {
       return;
     }
 
+    if (!auth.currentUser) return;
+
+    // Drafts – keep real-time
     const draftsQuery = query(
       collection(db, 'reports'),
       where('userId', '==', auth.currentUser.uid),
       where('isDraft', '==', true),
       orderBy('updatedAt', 'desc')
-    );
-
-    const submittedQuery = query(
-      collection(db, 'reports'),
-      where('userId', '==', auth.currentUser.uid),
-      where('isDraft', '==', false),
-      orderBy('createdAt', 'desc')
     );
 
     const unsubscribeDrafts = onSnapshot(draftsQuery, (snapshot) => {
@@ -55,26 +55,71 @@ export default function MyReports() {
       setDrafts(draftsList);
     });
 
-    const unsubscribeSubmitted = onSnapshot(submittedQuery, (snapshot) => {
-      const reportsList = [];
+    // Submitted – initial load with pagination
+    const fetchInitialSubmitted = async () => {
+      const first = query(
+        collection(db, 'reports'),
+        where('userId', '==', auth.currentUser.uid),
+        where('isDraft', '==', false),
+        where('isDeleted', '==', false),
+        orderBy('createdAt', 'desc'),
+        limit(PAGE_SIZE)
+      );
+
+      const snapshot = await getDocs(first);
+      const list = [];
       snapshot.forEach((doc) => {
         const data = doc.data();
-        reportsList.push({
+        list.push({
           id: doc.id,
           ...data,
           photoUrls: data.photoUrls || data.photos || [],
           videoUrls: data.videoUrls || (data.video ? [data.video] : (data.videos || [])),
         });
       });
-      setSubmittedReports(reportsList);
+      setSubmittedReports(list);
+      setLastVisibleSubmitted(snapshot.docs[snapshot.docs.length - 1]);
       setLoading(false);
-    });
+    };
+
+    fetchInitialSubmitted();
 
     return () => {
       unsubscribeDrafts();
-      unsubscribeSubmitted();
     };
   }, [router]);
+
+  // Load more submitted reports
+  const loadMoreSubmitted = async () => {
+    if (!lastVisibleSubmitted || loadingMore) return;
+    setLoadingMore(true);
+
+    const next = query(
+      collection(db, 'reports'),
+      where('userId', '==', auth.currentUser.uid),
+      where('isDraft', '==', false),
+      where('isDeleted', '==', false),
+      orderBy('createdAt', 'desc'),
+      startAfter(lastVisibleSubmitted),
+      limit(PAGE_SIZE)
+    );
+
+    const snapshot = await getDocs(next);
+    const newList = [];
+    snapshot.forEach((doc) => {
+      const data = doc.data();
+      newList.push({
+        id: doc.id,
+        ...data,
+        photoUrls: data.photoUrls || data.photos || [],
+        videoUrls: data.videoUrls || (data.video ? [data.video] : (data.videos || [])),
+      });
+    });
+
+    setSubmittedReports([...submittedReports, ...newList]);
+    setLastVisibleSubmitted(snapshot.docs[snapshot.docs.length - 1]);
+    setLoadingMore(false);
+  };
 
   const handleDeleteDraft = (draftId, title) => {
     Alert.alert(
@@ -140,6 +185,9 @@ export default function MyReports() {
               keyExtractor={(item) => item.id}
               renderItem={({ item }) => <ReportCard report={item} />}
               contentContainerStyle={styles.list}
+              onEndReached={loadMoreSubmitted}
+              onEndReachedThreshold={0.5}
+              ListFooterComponent={loadingMore && <ActivityIndicator style={{ marginVertical: 20 }} />}
               showsVerticalScrollIndicator={false}
             />
           )}

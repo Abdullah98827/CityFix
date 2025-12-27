@@ -6,9 +6,11 @@ import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, View } from 're
 import { auth, db } from '../../backend/firebase';
 import CustomButton from '../../components/CustomButton';
 import CustomInput from '../../components/CustomInput';
+import { logAction } from '../../utils/logger'; // <-- added import
 
 export default function LoginScreen() {
   const router = useRouter();
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -25,8 +27,7 @@ export default function LoginScreen() {
 
     // Try to sign in
     const userCredential = await signInWithEmailAndPassword(auth, email.trim(), password);
-
-    // If sign in failed, Firebase throws – we catch it below with if/else
+    // If sign in failed, Firebase throws an error
     if (!userCredential || !userCredential.user) {
       Alert.alert('Login Failed', 'Invalid email or password');
       setLoading(false);
@@ -35,10 +36,12 @@ export default function LoginScreen() {
 
     const user = userCredential.user;
 
+    // Log successful login
+    logAction('user_logged_in', user.uid, `Email: ${user.email}`);
+
     // Get user document
     const userDocRef = doc(db, 'UserMD', user.uid);
     const userDoc = await getDoc(userDocRef);
-
     if (!userDoc.exists()) {
       Alert.alert('Login Error', 'User data not found. Please register again.');
       setLoading(false);
@@ -85,7 +88,6 @@ export default function LoginScreen() {
       await handleLogin();
     } catch (error) {
       let errorMessage = 'Something went wrong. Please try again.';
-
       if (error.code === 'auth/invalid-email') {
         errorMessage = 'Please enter a valid email address';
       } else if (
@@ -95,7 +97,6 @@ export default function LoginScreen() {
       ) {
         errorMessage = 'Invalid email or password';
       }
-
       Alert.alert('Login Failed', errorMessage);
       setLoading(false);
     }
@@ -107,7 +108,6 @@ export default function LoginScreen() {
         <Text style={styles.appName}>CityFix</Text>
         <Text style={styles.title}>Sign in to your account</Text>
       </View>
-
       <View style={styles.form}>
         <CustomInput
           label="Email"
@@ -124,13 +124,11 @@ export default function LoginScreen() {
           onChangeText={setPassword}
           secureTextEntry
         />
-
         {loading ? (
           <ActivityIndicator size="large" color="#4F46E5" style={{ marginVertical: 20 }} />
         ) : (
           <CustomButton title="Sign In" onPress={safeHandleLogin} variant="secondary" />
         )}
-
         <Text style={styles.footerText}>
           Don’t have an account?{' '}
           <Text style={styles.link} onPress={() => router.push('/(auth)/register')}>

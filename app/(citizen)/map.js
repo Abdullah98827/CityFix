@@ -10,7 +10,7 @@ import {
   View,
 } from 'react-native';
 import MapView, { Callout, Marker } from 'react-native-maps';
-import { db } from '../../backend/firebase';
+import { auth, db } from '../../backend/firebase';
 import ReportCard from '../../components/ReportCard';
 import ReportHeader from '../../components/ReportHeader';
 
@@ -37,7 +37,12 @@ export default function MapViewScreen() {
   }, []);
 
   useEffect(() => {
-    const q = query(collection(db, 'reports'), orderBy('createdAt', 'desc'));
+    if (!auth.currentUser) return;
+
+    const q = query(
+      collection(db, 'reports'), 
+      orderBy('createdAt', 'desc'));
+
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const allReports = [];
       snapshot.forEach((doc) => {

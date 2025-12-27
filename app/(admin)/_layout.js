@@ -33,6 +33,10 @@ export default function AdminLayout() {
     <Stack>
       <Stack.Screen name="home" options={{ headerShown: false }} />
       <Stack.Screen name="categories" options={{ headerShown: false }}/>
+      <Stack.Screen name="zones" options={{ headerShown: false }}/>
+      <Stack.Screen name="manage-reports" options={{ headerShown: false }}/>
+      <Stack.Screen name="manage-reports/[id]" options={{ headerShown: false }}/>
+      <Stack.Screen name="logs" options={{ headerShown: false }}/>
     </Stack>
   );
 }

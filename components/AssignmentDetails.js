@@ -5,8 +5,23 @@ export default function AssignmentDetails({ report }) {
   const getDeadlineInfo = () => {
     if (!report.deadline) return null;
     
-    const deadlineDate = new Date(report.deadline);
+    // Handle both Firestore Timestamp and string dates
+    let deadlineDate;
+    if (report.deadline.toDate && typeof report.deadline.toDate === 'function') {
+      // It's a Firestore Timestamp
+      deadlineDate = report.deadline.toDate();
+    } else if (typeof report.deadline === 'string') {
+      // It's a string date
+      deadlineDate = new Date(report.deadline);
+    } else {
+      // It's already a Date object
+      deadlineDate = new Date(report.deadline);
+    }
+    
     const today = new Date();
+    today.setHours(0, 0, 0, 0); // Reset time to start of day for accurate comparison
+    deadlineDate.setHours(0, 0, 0, 0);
+    
     const diffTime = deadlineDate - today;
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
     
@@ -24,7 +39,7 @@ export default function AssignmentDetails({ report }) {
       text = diffDays === 1 ? '1 day left' : `${diffDays} days left`;
     }
     
-    return { color, text };
+    return { color, text, date: deadlineDate };
   };
 
   // Get priority color
@@ -64,7 +79,9 @@ export default function AssignmentDetails({ report }) {
           <View style={styles.infoRow}>
             <Text style={styles.label}>Deadline:</Text>
             <View style={{ alignItems: 'flex-end' }}>
-              <Text style={styles.value}>{report.deadline}</Text>
+              <Text style={styles.value}>
+                {deadlineInfo.date.toLocaleDateString('en-GB')}
+              </Text>
               <View style={[styles.deadlineBadge, { backgroundColor: deadlineInfo.color }]}>
                 <Text style={styles.badgeText}>{deadlineInfo.text}</Text>
               </View>

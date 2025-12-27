@@ -6,6 +6,7 @@ import { collection, onSnapshot, orderBy, query, where } from 'firebase/firestor
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   StyleSheet,
   Text,
@@ -15,11 +16,11 @@ import {
 import NotificationsScreen from '../(common)/notifications';
 import { auth, db } from '../../backend/firebase';
 import AppHeader from '../../components/AppHeader';
+import CustomButton from '../../components/CustomButton';
 import JobCard from '../../components/JobCard';
 
 export default function EngineerHome() {
   const router = useRouter();
-
   const [allJobs, setAllJobs] = useState([]);
   const [filteredJobs, setFilteredJobs] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -32,7 +33,6 @@ export default function EngineerHome() {
   useEffect(() => {
     (async () => {
       let { status } = await Location.requestForegroundPermissionsAsync();
-
       if (status === 'granted') {
         let location = await Location.getCurrentPositionAsync({});
         setUserLocation({
@@ -62,10 +62,10 @@ export default function EngineerHome() {
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const jobsList = [];
       snapshot.forEach((doc) => jobsList.push({ id: doc.id, ...doc.data() }));
-
       setAllJobs(jobsList);
 
       let filtered = jobsList;
+      // Apply status filter first
       if (filter === 'active') {
         filtered = jobsList.filter(
           (j) => j.status === 'assigned' || j.status === 'in progress' || j.status === 'reopened'
@@ -76,27 +76,136 @@ export default function EngineerHome() {
         );
       }
 
+      // Sort by proximity if we have user location
+      if (userLocation) {
+        filtered = [...filtered].map(job => {
+          if (!job.location) return { ...job, _distance: Infinity };
+          const R = 3959;
+          const dLat = (job.location.latitude - userLocation.latitude) * Math.PI / 180;
+          const dLon = (job.location.longitude - userLocation.longitude) * Math.PI / 180;
+          const a =
+            Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(userLocation.latitude * Math.PI / 180) *
+            Math.cos(job.location.latitude * Math.PI / 180) *
+            Math.sin(dLon / 2) * Math.sin(dLon / 2);
+          const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+          const distance = R * c;
+          return { ...job, _distance: distance };
+        }).sort((a, b) => a._distance - b._distance)
+          .map(({ _distance, ...job }) => job);
+      }
+
       setFilteredJobs(filtered);
+      setLoading(false);
+    }, (error) => {
+      // Handle permission errors (e.g., sign out)
+      console.warn('Snapshot error (likely logout):', error.message);
       setLoading(false);
     });
 
     unsubscribeRef.current = unsubscribe;
-    return () => unsubscribe();
-  }, [filter, router]);
+
+    // Cleanup on unmount or auth change
+    return () => {
+      unsubscribe();
+    };
+  }, [filter, userLocation, router]);
 
   const handleJobPress = (jobId) => {
     router.push(`/(engineer)/job-detail/${jobId}`);
+  };
+
+  // Suggested Route – nearest neighbour order
+  const handleSuggestedRoute = () => {
+    if (!userLocation) {
+      Alert.alert('Location Needed', 'Please enable location to get a suggested route');
+      return;
+    }
+    if (filteredJobs.length === 0) {
+      Alert.alert('No Jobs', 'You have no jobs to route');
+      return;
+    }
+    let remainingJobs = [...filteredJobs];
+    let route = [];
+    let currentPos = { latitude: userLocation.latitude, longitude: userLocation.longitude };
+    while (remainingJobs.length > 0) {
+      let closestJob = null;
+      let closestDist = Infinity;
+      remainingJobs.forEach(job => {
+        if (!job.location) return;
+        const dist = calculateDistance(
+          currentPos.latitude,
+          currentPos.longitude,
+          job.location.latitude,
+          job.location.longitude
+        );
+        if (dist < closestDist) {
+          closestDist = dist;
+          closestJob = job;
+        }
+      });
+      if (closestJob) {
+        route.push(closestJob);
+        remainingJobs = remainingJobs.filter(j => j.id !== closestJob.id);
+        currentPos = { latitude: closestJob.location.latitude, longitude: closestJob.location.longitude };
+      } else {
+        // If no location, just add remaining
+        route.push(...remainingJobs);
+        break;
+      }
+    }
+    setFilteredJobs(route);
+    Alert.alert('Route Updated', 'Jobs reordered for suggested route (nearest neighbour)');
+  };
+
+  const handleResetOrder = () => {
+    // Force reload from Firestore to get original creation order
+    const q = query(
+      collection(db, 'reports'),
+      where('assignedTo', '==', auth.currentUser.uid),
+      where('isDeleted', '==', false),
+      orderBy('createdAt', 'desc')
+    );
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const jobsList = [];
+      snapshot.forEach((doc) => jobsList.push({ id: doc.id, ...doc.data() }));
+      let filtered = jobsList;
+      if (filter === 'active') {
+        filtered = jobsList.filter(
+          (j) => j.status === 'assigned' || j.status === 'in progress' || j.status === 'reopened'
+        );
+      } else if (filter === 'completed') {
+        filtered = jobsList.filter(
+          (j) => j.status === 'resolved' || j.status === 'verified'
+        );
+      }
+      setFilteredJobs(filtered);
+      Alert.alert('Order Reset', 'Jobs restored to original assignment order');
+    });
+    // Cleanup
+    return () => unsubscribe();
+  };
+
+  // Calculate distance in miles (same as JobCard)
+  const calculateDistance = (lat1, lon1, lat2, lon2) => {
+    const R = 3959;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
   };
 
   // Calculate tab counts
   const activeCount = allJobs.filter(
     (j) => j.status === 'assigned' || j.status === 'in progress' || j.status === 'reopened'
   ).length;
-
   const completedCount = allJobs.filter(
     (j) => j.status === 'resolved' || j.status === 'verified'
   ).length;
-
   const allCount = allJobs.length;
 
   // Loading state
@@ -110,13 +219,12 @@ export default function EngineerHome() {
 
   return (
     <View style={styles.container}>
-      <AppHeader 
-        title="My Jobs" 
-        showBack={false} 
-        showSignOut={true} 
-        unreadCount={unreadCount} 
+      <AppHeader
+        title="My Jobs"
+        showBack={false}
+        showSignOut={true}
+        unreadCount={unreadCount}
       />
-
       {/* Filter tabs */}
       <View style={styles.filterContainer}>
         <TouchableOpacity
@@ -127,7 +235,6 @@ export default function EngineerHome() {
             Active ({activeCount})
           </Text>
         </TouchableOpacity>
-
         <TouchableOpacity
           style={[styles.filterTab, filter === 'completed' && styles.filterTabActive]}
           onPress={() => setFilter('completed')}
@@ -136,7 +243,6 @@ export default function EngineerHome() {
             Completed ({completedCount})
           </Text>
         </TouchableOpacity>
-
         <TouchableOpacity
           style={[styles.filterTab, filter === 'all' && styles.filterTabActive]}
           onPress={() => setFilter('all')}
@@ -146,7 +252,21 @@ export default function EngineerHome() {
           </Text>
         </TouchableOpacity>
       </View>
-
+      {/* Route Controls */}
+      <View style={styles.routeControls}>
+        <CustomButton
+          title="Suggested Route"
+          onPress={handleSuggestedRoute}
+          variant="secondary"
+          style={styles.routeButton}
+        />
+        <CustomButton
+          title="Reset"
+          onPress={handleResetOrder}
+          variant="danger"
+          style={styles.routeButton}
+        />
+      </View>
       {/* Jobs list */}
       {filteredJobs.length === 0 ? (
         <View style={styles.empty}>
@@ -167,7 +287,6 @@ export default function EngineerHome() {
           contentContainerStyle={styles.list}
         />
       )}
-
       {/* Hidden screen to get unread count for badge */}
       <View style={styles.hiddenNotifications}>
         <NotificationsScreen onUnreadCountChange={setUnreadCount} />
@@ -229,5 +348,20 @@ const styles = StyleSheet.create({
     width: 1,
     height: 1,
     opacity: 0,
+  },
+  routeControls: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    gap: 8,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e2e8f0',
+  },
+  routeButton: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 12,
+    fontSize: 14,
   },
 });

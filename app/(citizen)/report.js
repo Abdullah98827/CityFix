@@ -1,8 +1,8 @@
 import * as Location from 'expo-location';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { addDoc, collection, doc, getDoc, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { getDownloadURL, ref, uploadBytesResumable } from 'firebase/storage';
-import { useEffect, useLocalSearchParams, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -20,6 +20,7 @@ import CustomInput from '../../components/CustomInput';
 import MediaGallery from '../../components/MediaGallery';
 import { MediaPicker } from '../../components/MediaPicker';
 import ReportHeader from '../../components/ReportHeader';
+import { logAction } from '../../utils/logger'; // <-- added import
 
 export default function ReportIssue() {
   const router = useRouter();
@@ -42,6 +43,22 @@ export default function ReportIssue() {
   const [categories, setCategories] = useState([]);
 
   const isEditMode = !!draftId;
+
+  // Track active upload tasks for cancellation
+  const activeUploadTasks = useRef([]);
+
+  // Cancel all active uploads
+  const cancelUpload = () => {
+    activeUploadTasks.current.forEach(task => {
+      if (task && typeof task.cancel === 'function') {
+        task.cancel();
+      }
+    });
+    activeUploadTasks.current = [];
+    setLoading(false);
+    setUploadProgress('');
+    Alert.alert('Upload Cancelled', 'The upload has been cancelled.');
+  };
 
   // Load categories from ConfigMD
   useEffect(() => {
@@ -244,15 +261,22 @@ export default function ReportIssue() {
       userName,
       status: 'draft',
       isDraft: true,
+      isDeleted: false,
       updatedAt: serverTimestamp(),
     };
 
+    let draftReportId;
     if (isEditMode) {
       await updateDoc(doc(db, 'reports', draftId), draftData);
+      draftReportId = draftId;
     } else {
       draftData.createdAt = serverTimestamp();
-      await addDoc(collection(db, 'reports'), draftData);
+      const docRef = await addDoc(collection(db, 'reports'), draftData);
+      draftReportId = docRef.id;
     }
+
+    // Log draft saved
+    logAction('draft_saved', draftReportId, `Title: ${title.trim()}`);
 
     setLoading(false);
     setUploadProgress('');
@@ -262,7 +286,7 @@ export default function ReportIssue() {
     ]);
   };
 
-  // Submit report
+  // Submit report with resilience and cancel support
   const handleSubmit = async () => {
     if (!title || !description || !category || !location || media.length === 0) {
       Alert.alert('Incomplete', 'Please complete all fields and add at least one photo or video');
@@ -271,6 +295,7 @@ export default function ReportIssue() {
 
     setLoading(true);
     setUploadProgress('Preparing upload...');
+    activeUploadTasks.current = [];
 
     const totalItems = media.length;
     let currentItem = 0;
@@ -282,47 +307,55 @@ export default function ReportIssue() {
       if (item.type !== 'photo' && item.type !== 'video') continue;
 
       currentItem++;
-      setUploadProgress(`Uploading ${currentItem}/${totalItems} (0%)...`);
+      setUploadProgress(`Uploading ${currentItem}/${totalItems}...`);
 
       const isVideo = item.type === 'video';
       const uri = item.uri;
       const fileName = isVideo
         ? `video_${Date.now()}_${i}.mp4`
-        : `photo_${Date.now()}_${Math.random().toString(36).substring(7)}.jpg`;
+        : `photo_${Date.now()}_${i}.jpg`;
       const folder = isVideo ? 'videos' : 'images';
       const storageRef = ref(storage, `${folder}/${auth.currentUser.uid}/${fileName}`);
 
       const response = await fetch(uri);
       const blob = await response.blob();
 
-      // Video size check
       if (isVideo) {
         const sizeInMB = (blob.size / 1024 / 1024).toFixed(2);
         if (blob.size > 15 * 1024 * 1024) {
-          setLoading(false);
-          setUploadProgress('');
-          Alert.alert('Video Too Large', `Video is ${sizeInMB}MB. Please use a video under 15MB (10-15 seconds max).`);
+          cancelUpload();
+          Alert.alert('Video Too Large', `Video is ${sizeInMB}MB. Max 15MB (10-15 seconds).`);
           return;
         }
       }
 
-      const metadata = isVideo
-        ? { contentType: 'video/mp4' }
-        : { contentType: 'image/jpeg' };
+      const uploadTask = uploadBytesResumable(storageRef, blob);
 
-      const uploadTask = uploadBytesResumable(storageRef, blob, metadata);
+      activeUploadTasks.current.push(uploadTask);
 
       const snapshot = await new Promise((resolve, reject) => {
         uploadTask.on(
           'state_changed',
           (snap) => {
             const progress = Math.round((snap.bytesTransferred / snap.totalBytes) * 100);
-            setUploadProgress(`Uploading ${currentItem}/${totalItems} (${progress}%)...`);
+            setUploadProgress(`Uploading ${currentItem}/${totalItems} (${progress}%)`);
           },
-          reject,
+          (error) => {
+            // Ignore cancel error – don't reject
+            if (error.code === 'storage/canceled') {
+              resolve(null);
+            } else {
+              reject(error);
+            }
+          },
           () => resolve(uploadTask.snapshot)
         );
       });
+
+      if (snapshot === null) {
+        // Upload was cancelled – skip this item
+        continue;
+      }
 
       const url = await getDownloadURL(snapshot.ref);
 
@@ -332,6 +365,8 @@ export default function ReportIssue() {
         uploadedPhotoUrls.push(url);
       }
     }
+
+    activeUploadTasks.current = [];
 
     setUploadProgress('Saving report...');
 
@@ -350,15 +385,22 @@ export default function ReportIssue() {
       userName,
       status: 'submitted',
       isDraft: false,
+      isDeleted: false,
       submittedAt: serverTimestamp(),
     };
 
+    let reportId;
     if (isEditMode) {
       await updateDoc(doc(db, 'reports', draftId), reportData);
+      reportId = draftId;
     } else {
       reportData.createdAt = serverTimestamp();
-      await addDoc(collection(db, 'reports'), reportData);
+      const docRef = await addDoc(collection(db, 'reports'), reportData);
+      reportId = docRef.id;
     }
+
+    // Log report submitted
+    logAction('report_submitted', reportId, `Category: ${category}`);
 
     setLoading(false);
     setUploadProgress('');
@@ -495,8 +537,14 @@ export default function ReportIssue() {
           {loading ? (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="large" color="#4F46E5" />
-              <Text style={styles.uploadProgressText}>{uploadProgress}</Text>
-              <Text style={styles.uploadHelpText}>Please wait...</Text>
+              <Text style={styles.uploadProgressText}>{uploadProgress || 'Uploading...'}</Text>
+              <Text style={styles.uploadHelpText}>Please do not close the app</Text>
+              <CustomButton 
+                title="Cancel Upload" 
+                onPress={cancelUpload} 
+                variant="danger" 
+                style={{ marginTop: 20 }}
+              />
             </View>
           ) : (
             <>
@@ -557,8 +605,6 @@ const styles = StyleSheet.create({
   mediaLabel: { fontSize: 13, color: '#64748b', marginBottom: 8, fontStyle: 'italic', textAlign: 'center' },
   photoCount: { textAlign: 'center', marginVertical: 10, color: '#666', fontSize: 15 },
 });
-
-
 
 // import * as Location from 'expo-location';
 // import { useLocalSearchParams, useRouter } from 'expo-router';

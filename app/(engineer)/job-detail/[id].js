@@ -1,7 +1,7 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { getDownloadURL, ref, uploadBytesResumable } from 'firebase/storage';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -20,12 +20,12 @@ import MergedReportsSection from '../../../components/MergedReportsSection';
 import ReportHeader from '../../../components/ReportHeader';
 import ReportInfoSection from '../../../components/ReportInfoSection';
 import StatusTracker from '../../../components/StatusTracker';
+import { logAction } from '../../../utils/logger';
 import { syncStatusToMergedReports } from '../../../utils/statusSyncHelper';
 
 export default function EngineerJobDetail() {
   const { id } = useLocalSearchParams();
   const router = useRouter();
-
   const [job, setJob] = useState(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -34,6 +34,22 @@ export default function EngineerJobDetail() {
   const [afterMedia, setAfterMedia] = useState([]);
   const [newStatus, setNewStatus] = useState('in progress');
 
+  // Track active upload tasks for cancellation
+  const activeUploadTasks = useRef([]);
+
+  // Cancel all active uploads
+  const cancelUpload = () => {
+    activeUploadTasks.current.forEach(task => {
+      if (task && typeof task.cancel === 'function') {
+        task.cancel();
+      }
+    });
+    activeUploadTasks.current = [];
+    setSubmitting(false);
+    setUploadProgress('');
+    Alert.alert('Upload Cancelled', 'The upload has been cancelled.');
+  };
+
   // Fetch job details when screen loads
   useEffect(() => {
     const fetchJob = async () => {
@@ -41,6 +57,13 @@ export default function EngineerJobDetail() {
 
       if (jobDoc.exists()) {
         const jobData = { id: jobDoc.id, ...jobDoc.data() };
+
+        if (jobData.isDeleted) {
+          Alert.alert('Report Deleted', 'This report has been removed by an admin.');
+          router.back();
+          return;
+        }
+
         setJob(jobData);
 
         if (jobData.resolutionNotes) setResolutionNotes(jobData.resolutionNotes);
@@ -127,6 +150,10 @@ export default function EngineerJobDetail() {
 
     setJob({ ...job, status: 'in progress' });
     setSubmitting(false);
+
+    // Log job started
+    logAction('job_started', id);
+
     Alert.alert('Success', 'Job started successfully!');
   };
 
@@ -154,60 +181,68 @@ export default function EngineerJobDetail() {
           onPress: async () => {
             setSubmitting(true);
             setUploadProgress('Preparing upload...');
+            activeUploadTasks.current = []; // Reset tasks
 
             const totalItems = afterMedia.length;
             let currentItem = 0;
             const uploadedAfterPhotoUrls = [];
             const uploadedAfterVideoUrls = [];
 
-            // Upload each media item
             for (let i = 0; i < afterMedia.length; i++) {
               const item = afterMedia[i];
               if (item.type !== 'photo' && item.type !== 'video') continue;
 
               currentItem++;
-              setUploadProgress(`Uploading ${currentItem}/${totalItems} (0%)...`);
+              setUploadProgress(`Uploading ${currentItem}/${totalItems}...`);
 
               const isVideo = item.type === 'video';
               const uri = item.uri;
               const fileName = isVideo
                 ? `after_video_${Date.now()}_${i}.mp4`
-                : `after_photo_${Date.now()}_${Math.random().toString(36).substring(7)}.jpg`;
+                : `after_photo_${Date.now()}_${i}.jpg`;
               const folder = isVideo ? 'videos' : 'images';
               const storageRef = ref(storage, `${folder}/${auth.currentUser.uid}/${fileName}`);
 
               const response = await fetch(uri);
               const blob = await response.blob();
 
-              // Check video size (max 15MB)
               if (isVideo) {
                 const sizeInMB = (blob.size / 1024 / 1024).toFixed(2);
                 if (blob.size > 15 * 1024 * 1024) {
-                  setSubmitting(false);
-                  setUploadProgress('');
-                  Alert.alert('Video Too Large', `Video is ${sizeInMB}MB. Maximum 15MB (10-15 seconds).`);
+                  cancelUpload();
+                  Alert.alert('Video Too Large', `Video is ${sizeInMB}MB. Max 15MB (10-15 seconds).`);
                   return;
                 }
               }
 
-              const metadata = isVideo
-                ? { contentType: 'video/mp4' }
-                : { contentType: 'image/jpeg' };
+              const uploadTask = uploadBytesResumable(storageRef, blob);
 
-              const uploadTask = uploadBytesResumable(storageRef, blob, metadata);
+              // Track task for cancellation
+              activeUploadTasks.current.push(uploadTask);
 
-              // Wait for upload to complete
               const snapshot = await new Promise((resolve, reject) => {
                 uploadTask.on(
                   'state_changed',
                   (snap) => {
                     const progress = Math.round((snap.bytesTransferred / snap.totalBytes) * 100);
-                    setUploadProgress(`Uploading ${currentItem}/${totalItems} (${progress}%)...`);
+                    setUploadProgress(`Uploading ${currentItem}/${totalItems} (${progress}%)`);
                   },
-                  reject,
+                  (error) => {
+                    // Ignore cancel error
+                    if (error.code === 'storage/canceled') {
+                      resolve(null);
+                    } else {
+                      reject(error);
+                    }
+                  },
                   () => resolve(uploadTask.snapshot)
                 );
               });
+
+              if (snapshot === null) {
+                // Upload was cancelled – skip this item
+                continue;
+              }
 
               const url = await getDownloadURL(snapshot.ref);
 
@@ -217,6 +252,9 @@ export default function EngineerJobDetail() {
                 uploadedAfterPhotoUrls.push(url);
               }
             }
+
+            // Clear tasks after success
+            activeUploadTasks.current = [];
 
             setUploadProgress('Saving...');
 
@@ -230,10 +268,16 @@ export default function EngineerJobDetail() {
 
             await updateDoc(doc(db, 'reports', id), updateData);
 
-            // Sync to merged reports if any
             if (job.duplicateCount > 0) {
               await syncStatusToMergedReports(id, updateData);
             }
+
+            // Log the action
+            logAction(
+              newStatus === 'resolved' ? 'job_resolved' : 'job_in_progress',
+              id,
+              `Notes: ${resolutionNotes.trim()}`
+            );
 
             setSubmitting(false);
             setUploadProgress('');
@@ -312,7 +356,12 @@ export default function EngineerJobDetail() {
               </View>
             )}
             {submitting ? (
-              <ActivityIndicator size="large" color="#4F46E5" style={{ marginVertical: 20 }} />
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color="#4F46E5" />
+                <Text style={styles.uploadProgressText}>{uploadProgress || 'Uploading...'}</Text>
+                <Text style={styles.uploadHelpText}>Please do not close the app</Text>
+                <CustomButton title="Cancel Upload" onPress={cancelUpload} variant="danger" style={{ marginTop: 20 }} />
+              </View>
             ) : (
               <CustomButton title="Start Fixing" onPress={handleStartJob} variant="secondary" />
             )}
@@ -362,9 +411,11 @@ export default function EngineerJobDetail() {
               </>
             )}
             {submitting ? (
-              <View style={styles.uploadingContainer}>
+              <View style={styles.loadingContainer}>
                 <ActivityIndicator size="large" color="#4F46E5" />
-                <Text style={styles.uploadingText}>{uploadProgress}</Text>
+                <Text style={styles.uploadProgressText}>{uploadProgress || 'Uploading...'}</Text>
+                <Text style={styles.uploadHelpText}>Please do not close the app</Text>
+                <CustomButton title="Cancel Upload" onPress={cancelUpload} variant="danger" style={{ marginTop: 20 }} />
               </View>
             ) : (
               <CustomButton
@@ -383,7 +434,11 @@ export default function EngineerJobDetail() {
               Start working on this job
             </Text>
             {submitting ? (
-              <ActivityIndicator size="large" color="#4F46E5" />
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color="#4F46E5" />
+                <Text style={styles.uploadProgressText}>Preparing...</Text>
+                <CustomButton title="Cancel" onPress={() => setSubmitting(false)} variant="danger" style={{ marginTop: 20 }} />
+              </View>
             ) : (
               <CustomButton title="Start Job" onPress={handleStartJob} variant="secondary" />
             )}
@@ -444,8 +499,9 @@ const styles = StyleSheet.create({
   statusButtons: { flexDirection: 'row', gap: 12, marginBottom: 24 },
   photoButtons: { flexDirection: 'row', gap: 12, marginBottom: 15 },
   afterMediaTitle: { fontSize: 13, fontWeight: '600', color: '#64748b', marginTop: 8, marginBottom: 12, fontStyle: 'italic', textAlign: 'center' },
-  uploadingContainer: { alignItems: 'center', marginVertical: 20 },
-  uploadingText: { marginTop: 12, fontSize: 15, color: '#4F46E5', fontWeight: '600' },
+  loadingContainer: { alignItems: 'center', marginVertical: 20 },
+  uploadProgressText: { marginTop: 12, fontSize: 15, color: '#4F46E5', fontWeight: '600' },
+  uploadHelpText: { marginTop: 8, fontSize: 13, color: '#666', textAlign: 'center' },
   verifiedBadge: { marginTop: 20, padding: 16, backgroundColor: '#d1fae5', borderRadius: 12, alignItems: 'center' },
   verifiedText: { fontSize: 18, fontWeight: '800', color: '#065f46', marginBottom: 8 },
   qaFeedbackSuccess: { fontSize: 15, color: '#047857', textAlign: 'center' },
