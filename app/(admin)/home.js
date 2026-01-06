@@ -5,6 +5,7 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  Image,
   ScrollView,
   StyleSheet,
   Text,
@@ -15,7 +16,7 @@ import NotificationsScreen from '../(common)/notifications';
 import { db } from '../../backend/firebase';
 import AppHeader from '../../components/AppHeader';
 import CustomButton from '../../components/CustomButton';
-import { logAction } from '../../utils/logger'; // <-- added import
+import { logAction } from '../../utils/logger';
 
 export default function AdminHome() {
   const router = useRouter();
@@ -94,20 +95,14 @@ export default function AdminHome() {
 
   const updateRole = async (userId, newRole, oldRole) => {
     await updateDoc(doc(db, 'UserMD', userId), { role: newRole });
-
-    // Log role change
     logAction('user_role_changed', userId, `Changed from ${oldRole || 'unknown'} to ${newRole}`);
-
     Alert.alert("Success", "Role updated");
   };
 
   const toggleDisable = async (user) => {
     const newState = !user.isDisabled;
     await updateDoc(doc(db, 'UserMD', user.id), { isDisabled: newState });
-
-    // Log enable/disable
     logAction('user_account_toggled', user.id, `Account ${newState ? 'disabled' : 'enabled'}`);
-
     Alert.alert("Success", `Account ${newState ? "disabled" : "enabled"}`);
   };
 
@@ -123,10 +118,7 @@ export default function AdminHome() {
             if (text && text.trim()) {
               const newList = [...categories, text.trim()];
               await updateDoc(doc(db, 'ConfigMD', 'categories'), { list: newList });
-
-              // Log category added
               logAction('category_added', null, `Added: ${text.trim()}`);
-
               Alert.alert("Success", "Category added");
             }
           },
@@ -149,10 +141,7 @@ export default function AdminHome() {
             const removedCategory = categories[index];
             const newList = categories.filter((_, i) => i !== index);
             await updateDoc(doc(db, 'ConfigMD', 'categories'), { list: newList });
-
-            // Log category removed
             logAction('category_removed', null, `Removed: ${removedCategory}`);
-
             Alert.alert("Success", "Category removed");
           },
         },
@@ -162,7 +151,20 @@ export default function AdminHome() {
 
   const UserRow = ({ item }) => (
     <View style={styles.card}>
-      <View style={styles.avatar} />
+      {/* Profile Picture or Placeholder */}
+      {item.photoURL ? (
+        <Image 
+          source={{ uri: item.photoURL }} 
+          style={styles.avatar}
+        />
+      ) : (
+        <View style={styles.avatarPlaceholder}>
+          <Text style={styles.avatarText}>
+            {item.name ? item.name.charAt(0).toUpperCase() : item.email.charAt(0).toUpperCase()}
+          </Text>
+        </View>
+      )}
+      
       <View style={styles.info}>
         <Text style={styles.name}>{item.name || 'No name'}</Text>
         <Text style={styles.email}>{item.email}</Text>
@@ -230,7 +232,6 @@ export default function AdminHome() {
               Zones
             </Text>
           </TouchableOpacity>
-          {/* Added Logs tab */}
           <TouchableOpacity
             style={[styles.tab, activeTab === 'logs' && styles.tabActive]}
             onPress={() => setActiveTab('logs')}
@@ -304,7 +305,6 @@ export default function AdminHome() {
         </View>
       )}
 
-      {/* Logs tab content */}
       {activeTab === 'logs' && (
         <View style={styles.zonesContainer}>
           <View style={styles.zonesCard}>
@@ -373,6 +373,20 @@ const styles = StyleSheet.create({
     borderRadius: 28,
     backgroundColor: '#e0e7ff',
     marginRight: 16,
+  },
+  avatarPlaceholder: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#e0e7ff',
+    marginRight: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatarText: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#4F46E5',
   },
   info: { flex: 1 },
   name: { fontSize: 18, fontWeight: '700', color: '#1e293b' },

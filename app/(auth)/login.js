@@ -1,12 +1,13 @@
+// app/(auth)/login.js
 import { useRouter } from 'expo-router';
-import { signInWithEmailAndPassword, signOut } from 'firebase/auth';
+import { sendPasswordResetEmail, signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { useState } from 'react';
-import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { auth, db } from '../../backend/firebase';
 import CustomButton from '../../components/CustomButton';
 import CustomInput from '../../components/CustomInput';
-import { logAction } from '../../utils/logger'; // <-- added import
+import { logAction } from '../../utils/logger';
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -25,81 +26,101 @@ export default function LoginScreen() {
       return;
     }
 
-    // Try to sign in
-    const userCredential = await signInWithEmailAndPassword(auth, email.trim(), password);
-    // If sign in failed, Firebase throws an error
-    if (!userCredential || !userCredential.user) {
-      Alert.alert('Login Failed', 'Invalid email or password');
+    try {
+      const userCredential = await signInWithEmailAndPassword(auth, email.trim(), password);
+      const user = userCredential.user;
+
+      // Log successful login
+      logAction('user_logged_in', user.uid, `Email: ${user.email}`);
+
+      // Get user document
+      const userDocRef = doc(db, 'UserMD', user.uid);
+      const userDoc = await getDoc(userDocRef);
+
+      if (!userDoc.exists()) {
+        Alert.alert('Login Error', 'User data not found. Please register again.');
+        setLoading(false);
+        return;
+      }
+
+      const userData = userDoc.data();
+
+      // Check if account is disabled
+      if (userData.isDisabled) {
+        await signOut(auth);
+        Alert.alert(
+          'Account Disabled',
+          'Your account has been disabled by an administrator. Please contact support.',
+          [{ text: 'OK' }]
+        );
+        setLoading(false);
+        return;
+      }
+
+      const userRole = userData.role || 'citizen';
+
+      // Navigate based on role
+      if (userRole === 'citizen') {
+        router.replace('/(citizen)/home');
+      } else if (userRole === 'dispatcher') {
+        router.replace('/(dispatcher)/home');
+      } else if (userRole === 'engineer') {
+        router.replace('/(engineer)/home');
+      } else if (userRole === 'qa') {
+        router.replace('/(qa)/home');
+      } else if (userRole === 'admin') {
+        router.replace('/(admin)/home');
+      } else {
+        Alert.alert('Login Error', 'Role not recognised — please contact admin');
+      }
+
       setLoading(false);
-      return;
-    }
+    } catch (error) {
+      let message = 'Invalid email or password';
 
-    const user = userCredential.user;
+      if (error.code === 'auth/invalid-credential') {
+        message = 'Invalid email or password';
+      } else if (error.code === 'auth/user-not-found') {
+        message = 'No user found with this email';
+      } else if (error.code === 'auth/wrong-password') {
+        message = 'Incorrect password';
+      } else if (error.code === 'auth/invalid-email') {
+        message = 'Please enter a valid email address';
+      }
 
-    // Log successful login
-    logAction('user_logged_in', user.uid, `Email: ${user.email}`);
-
-    // Get user document
-    const userDocRef = doc(db, 'UserMD', user.uid);
-    const userDoc = await getDoc(userDocRef);
-    if (!userDoc.exists()) {
-      Alert.alert('Login Error', 'User data not found. Please register again.');
+      Alert.alert('Login Failed', message);
       setLoading(false);
-      return;
     }
-
-    const userData = userDoc.data();
-
-    // Check if account is disabled
-    if (userData.isDisabled) {
-      await signOut(auth);
-      Alert.alert(
-        'Account Disabled',
-        'Your account has been disabled by an administrator. Please contact support.',
-        [{ text: 'OK' }]
-      );
-      setLoading(false);
-      return;
-    }
-
-    const userRole = userData.role || 'citizen';
-
-    // Navigate based on role
-    if (userRole === 'citizen') {
-      router.replace('/(citizen)/home');
-    } else if (userRole === 'dispatcher') {
-      router.replace('/(dispatcher)/home');
-    } else if (userRole === 'engineer') {
-      router.replace('/(engineer)/home');
-    } else if (userRole === 'qa') {
-      router.replace('/(qa)/home');
-    } else if (userRole === 'admin') {
-      router.replace('/(admin)/home');
-    } else {
-      Alert.alert('Login Error', 'Role not recognised — please contact admin');
-    }
-
-    setLoading(false);
   };
 
-  // Wrap the actual call to handle errors with if/else
-  const safeHandleLogin = async () => {
-    try {
-      await handleLogin();
-    } catch (error) {
-      let errorMessage = 'Something went wrong. Please try again.';
-      if (error.code === 'auth/invalid-email') {
-        errorMessage = 'Please enter a valid email address';
-      } else if (
-        error.code === 'auth/user-not-found' ||
-        error.code === 'auth/wrong-password' ||
-        error.code === 'auth/invalid-credential'
-      ) {
-        errorMessage = 'Invalid email or password';
-      }
-      Alert.alert('Login Failed', errorMessage);
-      setLoading(false);
-    }
+  // Handle forgot password
+  const handleForgotPassword = () => {
+    Alert.prompt(
+      'Forgot Password',
+      'Enter your email address',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Send',
+          onPress: async (inputEmail) => {
+            if (!inputEmail || !inputEmail.includes('@')) {
+              Alert.alert('Error', 'Please enter a valid email');
+              return;
+            }
+
+            try {
+              await sendPasswordResetEmail(auth, inputEmail.trim());
+              Alert.alert('Success', 'Password reset email sent! Check your inbox.');
+            } catch (error) {
+              Alert.alert('Error', 'Could not send reset email. Check the email is correct.');
+            }
+          },
+        },
+      ],
+      'plain-text',
+      '',
+      'email-address'
+    );
   };
 
   return (
@@ -124,10 +145,13 @@ export default function LoginScreen() {
           onChangeText={setPassword}
           secureTextEntry
         />
+        <TouchableOpacity onPress={handleForgotPassword} style={styles.forgotLink}>
+          <Text style={styles.forgotText}>Forgot Password?</Text>
+        </TouchableOpacity>
         {loading ? (
           <ActivityIndicator size="large" color="#4F46E5" style={{ marginVertical: 20 }} />
         ) : (
-          <CustomButton title="Sign In" onPress={safeHandleLogin} variant="secondary" />
+          <CustomButton title="Sign In" onPress={handleLogin} variant="secondary" />
         )}
         <Text style={styles.footerText}>
           Don’t have an account?{' '}
@@ -164,6 +188,15 @@ const styles = StyleSheet.create({
   },
   form: {
     width: '100%',
+  },
+  forgotLink: {
+    alignSelf: 'flex-start',
+    marginTop: 8,
+    marginBottom: 24,
+  },
+  forgotText: {
+    color: '#4F46E5',
+    fontWeight: '600',
   },
   footerText: {
     textAlign: 'center',

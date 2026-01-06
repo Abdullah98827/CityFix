@@ -20,7 +20,7 @@ import CustomInput from '../../components/CustomInput';
 import MediaGallery from '../../components/MediaGallery';
 import { MediaPicker } from '../../components/MediaPicker';
 import ReportHeader from '../../components/ReportHeader';
-import { logAction } from '../../utils/logger'; // <-- added import
+import { logAction } from '../../utils/logger';
 
 export default function ReportIssue() {
   const router = useRouter();

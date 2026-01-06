@@ -61,6 +61,11 @@ export default function AppHeader({
             )}
           </TouchableOpacity>
         )}
+
+<TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/(common)/settings')}>
+  <Ionicons name="person-circle-outline" size={28} color="#fff" />
+</TouchableOpacity>
+
         {showSignOut && (
           <TouchableOpacity style={styles.iconBtn} onPress={handleSignOut}>
             <Ionicons name="log-out-outline" size={28} color="#fff" />

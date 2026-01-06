@@ -1,3 +1,4 @@
+// app/(auth)/register.js
 import { useRouter } from "expo-router";
 import { createUserWithEmailAndPassword } from "firebase/auth";
 import { doc, serverTimestamp, setDoc } from "firebase/firestore";
@@ -27,12 +28,12 @@ export default function RegisterScreen() {
     setLoading(true);
 
     // Basic validation using if/else and alerts
-    if (!name) {
+    if (!name.trim()) {
       Alert.alert("Missing Name", "Please enter your full name");
       setLoading(false);
       return;
     }
-    if (!email) {
+    if (!email.trim()) {
       Alert.alert("Missing Email", "Please enter your email address");
       setLoading(false);
       return;
@@ -42,14 +43,15 @@ export default function RegisterScreen() {
       setLoading(false);
       return;
     }
-    if (password.length < 6) {
-      Alert.alert("Weak Password", "Password must be at least 6 characters");
+    if (password.length < 8) {
+      Alert.alert("Weak Password", "Password must be at least 8 characters");
       setLoading(false);
       return;
     }
 
     // Try to create the user
     const userCredential = await createUserWithEmailAndPassword(auth, email.trim(), password);
+
     if (!userCredential || !userCredential.user) {
       Alert.alert("Registration Failed", "Something went wrong. Please try again.");
       setLoading(false);
@@ -81,13 +83,17 @@ export default function RegisterScreen() {
       await handleRegister();
     } catch (error) {
       let errorMessage = "Something went wrong. Please try again.";
+
       if (error.code === "auth/email-already-in-use") {
         errorMessage = "This email is already registered";
       } else if (error.code === "auth/invalid-email") {
         errorMessage = "Please enter a valid email address";
       } else if (error.code === "auth/weak-password") {
-        errorMessage = "Password is too weak (minimum 6 characters)";
+        errorMessage = "Password is too weak – must be at least 8 characters";
+      } else if (error.code === "auth/operation-not-allowed") {
+        errorMessage = "Email/password accounts are not enabled";
       }
+
       Alert.alert("Registration Failed", errorMessage);
       setLoading(false);
     }
@@ -116,7 +122,7 @@ export default function RegisterScreen() {
         />
         <CustomInput
           label="Password"
-          placeholder="Minimum 6 characters"
+          placeholder="Minimum 8 characters"
           value={password}
           onChangeText={setPassword}
           secureTextEntry
