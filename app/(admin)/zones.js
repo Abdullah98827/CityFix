@@ -1,5 +1,3 @@
-// app/(admin)/zones.js
-// Admin screen to create, edit, and delete zones with professional polygon drawing
 import { addDoc, collection, deleteDoc, doc, getDocs, updateDoc } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
 import {
@@ -16,7 +14,7 @@ import { db } from '../../backend/firebase';
 import CustomButton from '../../components/CustomButton';
 import CustomInput from '../../components/CustomInput';
 import ReportHeader from '../../components/ReportHeader';
-import { logAction } from '../../utils/logger'; // <-- added import
+import { logAction } from '../../utils/logger';
 
 export default function ZonesAdmin() {
   const [zones, setZones] = useState([]);
@@ -86,24 +84,24 @@ export default function ZonesAdmin() {
     const zonesCollection = collection(db, 'ConfigMD', 'config', 'zones');
 
     if (drawingZone.id) {
-      // Update existing zone
+      // Updates existing zone
       await updateDoc(doc(zonesCollection, drawingZone.id), {
         name: newZoneName.trim(),
         polygon: drawingZone.coordinates,
       });
 
-      // Log zone update
+      // Logs zone update
       logAction('zone_updated', drawingZone.id, `Name: ${newZoneName.trim()}, Points: ${drawingZone.coordinates.length}`);
 
       Alert.alert('Success', 'Zone updated');
     } else {
-      // Create new zone
+      // Creates new zone
       const docRef = await addDoc(zonesCollection, {
         name: newZoneName.trim(),
         polygon: drawingZone.coordinates,
       });
 
-      // Log zone creation
+      // Logs zone creation
       logAction('zone_created', docRef.id, `Name: ${newZoneName.trim()}, Points: ${drawingZone.coordinates.length}`);
 
       Alert.alert('Success', 'Zone created');
@@ -139,7 +137,7 @@ export default function ZonesAdmin() {
           onPress: async () => {
             await deleteDoc(doc(db, 'ConfigMD', 'config', 'zones', zoneId));
 
-            // Log zone deletion
+            // Logs zone deletion
             logAction('zone_deleted', zoneId, 'Deleted by admin');
 
             setZones(zones.filter(z => z.id !== zoneId));

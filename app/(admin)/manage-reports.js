@@ -1,5 +1,3 @@
-// app/(admin)/manage-reports.js
-// Admin screen to list all reports and tap to view/delete
 import { useRouter } from 'expo-router';
 import { collection, getDocs, limit, orderBy, query, startAfter } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
@@ -40,8 +38,7 @@ export default function AdminManageReports() {
       collection(db, 'reports'),
       orderBy('createdAt', 'desc'),
       limit(PAGE_SIZE)
-    );
-
+    );   
     if (!isRefresh && lastVisible) {
       q = query(
         collection(db, 'reports'),

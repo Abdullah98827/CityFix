@@ -35,7 +35,7 @@ export default function QAVerifyScreen() {
   const [reopenReasons, setReopenReasons] = useState([]);
   const [showReopenSection, setShowReopenSection] = useState(false);
 
-  // Load reopen reasons from ConfigMD
+  // Loads reopen reasons from ConfigMD
   useEffect(() => {
     const unsubscribe = onSnapshot(doc(db, 'ConfigMD', 'reopenReasons'), (doc) => {
       if (doc.exists() && doc.data().list) {
@@ -140,7 +140,7 @@ export default function QAVerifyScreen() {
               await syncStatusToMergedReports(id, updateData);
             }
 
-            // Log reopen
+            // Logs reopen
             logAction('report_reopened', id, `Reason: ${selectedReason}${reopenNotes.trim() ? ` - ${reopenNotes.trim()}` : ''}`);
 
             setSubmitting(false);

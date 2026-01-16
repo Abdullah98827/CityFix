@@ -1,4 +1,3 @@
-// app/(auth)/register.js
 import { useRouter } from "expo-router";
 import { createUserWithEmailAndPassword } from "firebase/auth";
 import { doc, serverTimestamp, setDoc } from "firebase/firestore";
@@ -27,7 +26,6 @@ export default function RegisterScreen() {
   const handleRegister = async () => {
     setLoading(true);
 
-    // Basic validation using if/else and alerts
     if (!name.trim()) {
       Alert.alert("Missing Name", "Please enter your full name");
       setLoading(false);
@@ -49,7 +47,7 @@ export default function RegisterScreen() {
       return;
     }
 
-    // Try to create the user
+    // Tries to create the user
     const userCredential = await createUserWithEmailAndPassword(auth, email.trim(), password);
 
     if (!userCredential || !userCredential.user) {
@@ -69,10 +67,10 @@ export default function RegisterScreen() {
       createdAt: serverTimestamp(),
     });
 
-    // Log registration
+    // Logs registration
     logAction('user_registered', user.uid, `Email: ${user.email}, Role: citizen`);
 
-    // Success – go to login
+    // If success goes to login
     router.replace("/(auth)/login");
     setLoading(false);
   };

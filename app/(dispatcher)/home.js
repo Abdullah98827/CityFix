@@ -1,5 +1,3 @@
-// app/(dispatcher)/home.js
-// Dispatcher home screen with auto-merge, manual review, and unread notifications badge
 import { useRouter } from 'expo-router';
 import { collection, doc, getDocs, orderBy, query, updateDoc, where } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
@@ -19,24 +17,22 @@ import AppHeader from '../../components/AppHeader';
 import CustomButton from '../../components/CustomButton';
 import ReportCard from '../../components/ReportCard';
 
-// ============================================
-// CONFIGURABLE SETTINGS
-// ============================================
-const AUTO_MERGE_RADIUS_KM = 0.03; // 30 metres
-const AUTO_MERGE_TIME_HOURS = 12;
-const MANUAL_REVIEW_RADIUS_KM = 0.05; // 50 metres
-const MANUAL_REVIEW_TIME_HOURS = 24;
+// These can be changed depending on how we want to set  different merge behaviour
+const AUTO_MERGE_RADIUS_KM = 0.03;      // 30 metres is close enough to be obvious duplicate
+const AUTO_MERGE_TIME_HOURS = 12;       // within 12 hours means recent reports only
+const MANUAL_REVIEW_RADIUS_KM = 0.05;   // 50 metres is wider for possible matches
+const MANUAL_REVIEW_TIME_HOURS = 24;    // 24 hours time window for manual check
 
 export default function DispatcherHome() {
   const router = useRouter();
 
-  const [allReports, setAllReports] = useState([]);
-  const [displayItems, setDisplayItems] = useState([]);
+  const [allReports, setAllReports] = useState([]);        
+  const [displayItems, setDisplayItems] = useState([]); 
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState('new');
+  const [filter, setFilter] = useState('new');  
   const [unreadCount, setUnreadCount] = useState(0);
 
-  // Load all reports once
+  // Loads reports once when screen opens
   useEffect(() => {
     if (!auth.currentUser) return;
 
@@ -51,21 +47,23 @@ export default function DispatcherHome() {
 
       const snapshot = await getDocs(q);
       const reportsList = [];
+
       snapshot.forEach((doc) => {
         const data = doc.data();
-        if (data.status !== 'merged') {
+        if (data.status !== 'merged') {    // skips already merged ones
           reportsList.push({ id: doc.id, ...data });
         }
       });
 
       setAllReports(reportsList);
 
-      // Auto-merge obvious duplicates
+      // Runs auto-merge on submitted reports
       const submittedReports = reportsList.filter(r => r.status === 'submitted');
       if (submittedReports.length > 0) {
         await autoMergeDuplicates(submittedReports);
       }
 
+      // Shows the right view based on current filter
       updateDisplayItems(reportsList, filter);
       setLoading(false);
     };
@@ -73,18 +71,18 @@ export default function DispatcherHome() {
     fetchReports();
   }, []);
 
-  // Re-run display update when filter changes
+  // Whenever filter or reports changes, refreshes what it shows
   useEffect(() => {
     updateDisplayItems(allReports, filter);
   }, [filter, allReports]);
 
-  // Update display based on current filter
+  // Decide what to display: single reports or grouped duplicates
   const updateDisplayItems = (reportsList, currentFilter) => {
     let items = reportsList;
 
     if (currentFilter === 'new') {
       const submittedOnly = items.filter(r => r.status === 'submitted');
-      items = groupUncertainDuplicates(submittedOnly);
+      items = groupUncertainDuplicates(submittedOnly);     // groups possible duplicates
     } else if (currentFilter === 'assigned') {
       items = items
         .filter(r => r.status === 'assigned' || r.status === 'in progress')
@@ -96,14 +94,16 @@ export default function DispatcherHome() {
     setDisplayItems(items);
   };
 
-  // Auto-merge obvious duplicates
+  // Auto-merge anything that's clearly the same issue
   const autoMergeDuplicates = async (reports) => {
     const processed = new Set();
+
     for (let i = 0; i < reports.length; i++) {
       const report = reports[i];
       if (processed.has(report.id) || report.duplicateCount > 0) continue;
 
       const duplicates = [];
+
       for (let j = 0; j < reports.length; j++) {
         const other = reports[j];
         if (processed.has(other.id) || other.id === report.id) continue;
@@ -115,6 +115,7 @@ export default function DispatcherHome() {
           other.location.latitude,
           other.location.longitude
         );
+
         if (distance > AUTO_MERGE_RADIUS_KM) continue;
 
         const timeDiff = Math.abs(
@@ -122,6 +123,7 @@ export default function DispatcherHome() {
           (other.createdAt?.toDate() || new Date())
         );
         const hoursDiff = timeDiff / (1000 * 60 * 60);
+
         if (hoursDiff > AUTO_MERGE_TIME_HOURS) continue;
 
         duplicates.push(other);
@@ -129,6 +131,7 @@ export default function DispatcherHome() {
       }
 
       if (duplicates.length > 0) {
+        // Marks all duplicates as merged
         for (const dup of duplicates) {
           await updateDoc(doc(db, 'reports', dup.id), {
             status: 'merged',
@@ -137,20 +140,24 @@ export default function DispatcherHome() {
             autoMerged: true,
           });
         }
+
+        // Updates the master report
         await updateDoc(doc(db, 'reports', report.id), {
           duplicateCount: duplicates.length,
           mergedReportIds: duplicates.map(d => d.id),
           autoMerged: true,
         });
       }
+
       processed.add(report.id);
     }
   };
 
-  // Group uncertain duplicates for manual review
+  // Group reports that are close but not close enough for auto-merge
   const groupUncertainDuplicates = (reports) => {
     const grouped = [];
     const processed = new Set();
+
     for (const report of reports) {
       if (processed.has(report.id)) continue;
 
@@ -167,6 +174,7 @@ export default function DispatcherHome() {
           other.location.latitude,
           other.location.longitude
         );
+
         if (distance > MANUAL_REVIEW_RADIUS_KM) continue;
 
         const timeDiff = Math.abs(
@@ -174,6 +182,7 @@ export default function DispatcherHome() {
           (other.createdAt?.toDate() || new Date())
         );
         const hoursDiff = timeDiff / (1000 * 60 * 60);
+
         if (hoursDiff > MANUAL_REVIEW_TIME_HOURS) continue;
 
         group.push(other);
@@ -190,10 +199,11 @@ export default function DispatcherHome() {
         grouped.push({ type: 'single', report: group[0] });
       }
     }
+
     return grouped;
   };
 
-  // Calculate distance (Haversine)
+  // Used Haversine distance in km because its good for local council jobs
   const calculateDistance = (lat1, lon1, lat2, lon2) => {
     const R = 6371;
     const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -206,10 +216,12 @@ export default function DispatcherHome() {
     return R * c;
   };
 
+  // Tap a report to go to its detail page
   const handleReportPress = (reportId) => {
     router.push(`/(dispatcher)/report-detail/${reportId}`);
   };
 
+  // Dispatcher manually merges a group of possible duplicates
   const handleManualMerge = async (group) => {
     const master = group.master;
     const duplicates = group.reports.slice(1);
@@ -238,6 +250,7 @@ export default function DispatcherHome() {
     );
   };
 
+  // Quick counts for the tabs
   const newCount = allReports.filter(r => r.status === 'submitted').length;
   const assignedCount = allReports.filter(r =>
     r.status === 'assigned' || r.status === 'in progress'
@@ -260,6 +273,8 @@ export default function DispatcherHome() {
         showSignOut={true}
         unreadCount={unreadCount}
       />
+
+      {/* Tabs for filtering */}
       <View style={styles.filterContainer}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
           <TouchableOpacity
@@ -288,6 +303,7 @@ export default function DispatcherHome() {
           </TouchableOpacity>
         </ScrollView>
       </View>
+
       {displayItems.length === 0 ? (
         <View style={styles.empty}>
           <Text style={styles.emptyText}>No reports found</Text>
@@ -311,7 +327,7 @@ export default function DispatcherHome() {
                   </Text>
                   <Text style={styles.groupSubtitle}>
                     These reports are within {MANUAL_REVIEW_RADIUS_KM * 1000}m and {MANUAL_REVIEW_TIME_HOURS}h of each other.
-                    Review them and merge if they`re the same issue.
+                    Review them and merge if they’re the same issue.
                   </Text>
                   {item.reports.map((r) => (
                     <ReportCard
@@ -328,6 +344,7 @@ export default function DispatcherHome() {
                 </View>
               );
             }
+
             const report = item.report;
             return (
               <View>

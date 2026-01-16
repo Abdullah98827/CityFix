@@ -1,5 +1,3 @@
-// app/(engineer)/home.js
-// Engineer home screen showing assigned jobs with filters and unread badge
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import { collection, onSnapshot, orderBy, query, where } from 'firebase/firestore';
@@ -29,7 +27,7 @@ export default function EngineerHome() {
   const unsubscribeRef = useRef(null);
   const [unreadCount, setUnreadCount] = useState(0);
 
-  // Get user location for distance calculation
+  // Gets users location for distance calculation
   useEffect(() => {
     (async () => {
       let { status } = await Location.requestForegroundPermissionsAsync();
@@ -40,13 +38,13 @@ export default function EngineerHome() {
           longitude: location.coords.longitude,
         });
       } else {
-        // Default to Northampton if permission denied
+        // Defaults to Northampton if permission denied
         setUserLocation({ latitude: 52.2405, longitude: -0.9027 });
       }
     })();
   }, []);
 
-  // Fetch assigned jobs for this engineer
+  // Fetches assigned jobs for this engineer
   useEffect(() => {
     if (!auth.currentUser) {
       router.replace('/(auth)/login');
@@ -65,7 +63,7 @@ export default function EngineerHome() {
       setAllJobs(jobsList);
 
       let filtered = jobsList;
-      // Apply status filter first
+      // Applies status filter first
       if (filter === 'active') {
         filtered = jobsList.filter(
           (j) => j.status === 'assigned' || j.status === 'in progress' || j.status === 'reopened'
@@ -76,7 +74,7 @@ export default function EngineerHome() {
         );
       }
 
-      // Sort by proximity if we have user location
+      // Sorts by proximity if we have user location
       if (userLocation) {
         filtered = [...filtered].map(job => {
           if (!job.location) return { ...job, _distance: Infinity };
@@ -98,7 +96,7 @@ export default function EngineerHome() {
       setFilteredJobs(filtered);
       setLoading(false);
     }, (error) => {
-      // Handle permission errors (e.g., sign out)
+      // Handles permission errors
       console.warn('Snapshot error (likely logout):', error.message);
       setLoading(false);
     });

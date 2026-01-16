@@ -1,24 +1,15 @@
-// components/ReportCard.js — FIXED: Hooks called at top, no conditional errors
 import { useRouter } from 'expo-router';
 import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 export default function ReportCard({ report, onPress }) {
-  // ============================================
-  // IMPORTANT: Call hooks at the TOP, before any returns
-  // This is a React rule - hooks must always run in the same order
-  // ============================================
   const router = useRouter();
 
-  // ============================================
-  // NOW we can do safety checks AFTER hooks are called
-  // ============================================
+  // Quick safety check, no report or missing id means don't render anything
   if (!report || !report.id) {
-    return null; // Safety: if no report or missing id, skip rendering
+    return null;
   }
 
-  // ============================================
-  // STATUS COLOR HELPER
-  // ============================================
+  // Simple helper to pick the right colour for the status badge
   const getStatusColor = (status) => {
     switch (status) {
       case 'submitted': return '#F59E0B';
@@ -32,9 +23,7 @@ export default function ReportCard({ report, onPress }) {
     }
   };
 
-  // ============================================
-  // HANDLE PRESS
-  // ============================================
+  // Handle tapping the card, use custom onPress if given, otherwise go to detail
   const handlePress = () => {
     if (onPress) {
       onPress(report.id);
@@ -43,20 +32,15 @@ export default function ReportCard({ report, onPress }) {
     }
   };
 
-  // ============================================
-  // SAFE FALLBACK FOR MEDIA
-  // ============================================
+  // Fallbacks so we don't crash if media fields are missing 
   const photoUrls = report.photoUrls || report.photos || [];
   const videoUrls = report.videoUrls || (report.video ? [report.video] : (report.videos || []));
   const firstPhoto = photoUrls[0];
   const hasVideo = videoUrls.length > 0;
 
-  // ============================================
-  // RENDER CARD
-  // ============================================
   return (
     <TouchableOpacity style={styles.card} onPress={handlePress}>
-      {/* Media Section */}
+      {/* Media preview, photo first, then video, then placeholder */}
       {firstPhoto ? (
         <Image source={{ uri: firstPhoto }} style={styles.photo} />
       ) : hasVideo ? (
@@ -72,7 +56,7 @@ export default function ReportCard({ report, onPress }) {
         </View>
       )}
 
-      {/* Info Section */}
+      {/* All the text info */}
       <View style={styles.info}>
         <Text style={styles.title} numberOfLines={2}>
           {report.title || 'Untitled Report'}
@@ -81,7 +65,7 @@ export default function ReportCard({ report, onPress }) {
           {report.category || 'Uncategorized'}
         </Text>
 
-        {/* Merged Badge - Shows if duplicates were merged */}
+        {/* Show merged badge if this report has duplicates */}
         {report.duplicateCount > 0 && (
           <View style={styles.mergedBadge}>
             <Text style={styles.mergedText}>
@@ -108,10 +92,6 @@ export default function ReportCard({ report, onPress }) {
     </TouchableOpacity>
   );
 }
-
-// ============================================
-// STYLES
-// ============================================
 const styles = StyleSheet.create({
   card: {
     backgroundColor: '#fff',

@@ -1,4 +1,3 @@
-// app/(admin)/logs.js
 import { collection, getDocs, limit, orderBy, query, startAfter } from 'firebase/firestore';
 import { useCallback, useEffect, useState } from 'react';
 import {

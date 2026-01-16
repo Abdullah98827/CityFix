@@ -7,8 +7,7 @@ import { auth, db } from '../backend/firebase';
 // Sets up how notifications show up when the app is open
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldShowAlert: true, // Show the alert popup
-    shouldPlaySound: true, // Play a sound
+    shouldShowAlert: true, // Shows the alert popup
     shouldSetBadge: false, // No badge on app icon
   }),
 });
@@ -17,7 +16,7 @@ Notifications.setNotificationHandler({
 export async function registerForPushNotificationsAsync() {
   let token;
 
-  // Checks if the user is on a real phone, and not a simulator
+  // Checks if the user is on a real phone
   if (!Device.isDevice) {
     return;
   }

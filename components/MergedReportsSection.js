@@ -121,7 +121,6 @@ export default function MergedReportsSection({ masterReport, role = 'dispatcher'
                     />
                   ) : (
                     <View style={styles.noThumbnail}>
-                      <Text style={styles.noThumbnailText}>📷</Text>
                     </View>
                   )}
                 </View>

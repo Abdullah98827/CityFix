@@ -44,7 +44,7 @@ export default function AdminCategories() {
     const updated = [...categories, newCategory.trim()];
     await updateDoc(doc(db, 'ConfigMD', 'categories'), { list: updated });
 
-    // Log category added
+    // Logs category added
     logAction('category_added', null, `Added: ${newCategory.trim()}`);
 
     setCategories(updated);
@@ -67,7 +67,7 @@ export default function AdminCategories() {
             const updated = categories.filter((_, i) => i !== index);
             await updateDoc(doc(db, 'ConfigMD', 'categories'), { list: updated });
 
-            // Log category removed
+            // Logs category removed
             logAction('category_removed', null, `Removed: ${removedCategory}`);
 
             setCategories(updated);

@@ -13,5 +13,5 @@
     "**/*.tsx",
     ".expo/types/**/*.ts",
     "expo-env.d.ts"
-, "hooks/use-color-scheme.js", "hooks/use-color-scheme.web.js", "hooks/use-theme-color.js", "constants/theme.js"  ]
+, "hooks/use-color-scheme.js", "hooks/use-color-scheme.web.js", "hooks/use-theme-color.js", "constants/theme.js", "components/external-link.js", "components/haptic-tab.js", "components/hello-wave.js", "components/parallax-scroll-view.js", "components/themed-view.js", "components/themed-text.js"  ]
 }

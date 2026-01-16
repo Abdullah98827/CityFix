@@ -18,7 +18,7 @@ export default function NotificationsScreen({ onUnreadCountChange }) {
   const [loading, setLoading] = useState(true);
   const [userRole, setUserRole] = useState('citizen');
 
-  // Fetch user role once
+  // Fetches user role once
   useEffect(() => {
     if (!auth.currentUser) return;
 
@@ -32,7 +32,7 @@ export default function NotificationsScreen({ onUnreadCountChange }) {
     fetchRole();
   }, []);
 
-  // Fetch notifications + count unread
+  // Fetches notifications + count unread
   useEffect(() => {
     if (!auth.currentUser) return;
 

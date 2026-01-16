@@ -33,11 +33,9 @@ export default function EngineerJobDetail() {
   const [resolutionNotes, setResolutionNotes] = useState('');
   const [afterMedia, setAfterMedia] = useState([]);
   const [newStatus, setNewStatus] = useState('in progress');
-
-  // Track active upload tasks for cancellation
   const activeUploadTasks = useRef([]);
 
-  // Cancel all active uploads
+  // Cancels all active uploads
   const cancelUpload = () => {
     activeUploadTasks.current.forEach(task => {
       if (task && typeof task.cancel === 'function') {
@@ -50,7 +48,7 @@ export default function EngineerJobDetail() {
     Alert.alert('Upload Cancelled', 'The upload has been cancelled.');
   };
 
-  // Fetch job details when screen loads
+  // Fetches job details when screen loads
   useEffect(() => {
     const fetchJob = async () => {
       const jobDoc = await getDoc(doc(db, 'reports', id));
@@ -90,7 +88,7 @@ export default function EngineerJobDetail() {
     fetchJob();
   }, [id]);
 
-  // Pick from gallery for after evidence
+  // Picks from gallery for after evidence
   const handleAfterGalleryPick = async () => {
     const videoCount = afterMedia.filter(m => m.type === 'video').length;
     if (videoCount >= 1) {
@@ -139,7 +137,7 @@ export default function EngineerJobDetail() {
     setAfterMedia(afterMedia.filter((_, i) => i !== index));
   };
 
-  // Start the job (change status to 'in progress')
+  // Start the job (changes status to 'in progress')
   const handleStartJob = async () => {
     setSubmitting(true);
 
@@ -272,7 +270,7 @@ export default function EngineerJobDetail() {
               await syncStatusToMergedReports(id, updateData);
             }
 
-            // Log the action
+            // Logs the action
             logAction(
               newStatus === 'resolved' ? 'job_resolved' : 'job_in_progress',
               id,
@@ -427,7 +425,7 @@ export default function EngineerJobDetail() {
           </View>
         )}
 
-        {/* Assigned state – just start job button */}
+        {/* Assigned state, just start job button */}
         {job.status === 'assigned' && (
           <View style={styles.startJobContainer}>
             <Text style={styles.instructionText}>
@@ -445,7 +443,7 @@ export default function EngineerJobDetail() {
           </View>
         )}
 
-        {/* Resolved or verified state – show details */}
+        {/* Resolved or verified state, show details */}
         {(job.status === 'resolved' || job.status === 'verified') && (
           <View style={styles.resolvedSection}>
             <Text style={styles.sectionTitle}>Resolution Details</Text>

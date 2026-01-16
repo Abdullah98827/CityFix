@@ -33,7 +33,7 @@ export default function MyReports() {
 
     if (!auth.currentUser) return;
 
-    // Drafts – keep real-time
+    // Drafts- keep real-time
     const draftsQuery = query(
       collection(db, 'reports'),
       where('userId', '==', auth.currentUser.uid),
@@ -55,7 +55,7 @@ export default function MyReports() {
       setDrafts(draftsList);
     });
 
-    // Submitted – initial load with pagination
+    // Submitted, initial loads with pagination
     const fetchInitialSubmitted = async () => {
       const first = query(
         collection(db, 'reports'),
@@ -89,7 +89,7 @@ export default function MyReports() {
     };
   }, [router]);
 
-  // Load more submitted reports
+  // Loads more submitted reports
   const loadMoreSubmitted = async () => {
     if (!lastVisibleSubmitted || loadingMore) return;
     setLoadingMore(true);

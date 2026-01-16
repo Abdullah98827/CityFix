@@ -1,4 +1,3 @@
-// app/(common)/settings.js
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import { EmailAuthProvider, reauthenticateWithCredential, signOut, updatePassword, updateProfile } from 'firebase/auth';
@@ -6,20 +5,20 @@ import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { getDownloadURL, ref, uploadBytesResumable } from 'firebase/storage';
 import { useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    Image,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  Image,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { auth, db, storage } from '../../backend/firebase';
 import CustomButton from '../../components/CustomButton';
 import CustomInput from '../../components/CustomInput';
 import ReportHeader from '../../components/ReportHeader';
-import { logAction } from '../../utils/logger'; // <-- added import
+import { logAction } from '../../utils/logger';
 
 export default function SettingsScreen() {
   const router = useRouter();
@@ -37,7 +36,7 @@ export default function SettingsScreen() {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
-  // Load user data
+  // Loads user data
   useEffect(() => {
     const loadUser = async () => {
       if (!auth.currentUser) {
@@ -63,18 +62,18 @@ export default function SettingsScreen() {
     loadUser();
   }, []);
 
-  // Upload profile picture - ONLY PHOTOS
+  // Uploads profile picture (ONLY PHOTOS)
   const handlePhotoPick = async () => {
-    // Request permission
+    // Requests permission
     const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (permissionResult.status !== 'granted') {
       Alert.alert('Permission Required', 'Please allow access to your photos');
       return;
     }
 
-    // Pick image directly
+    // Picks image directly
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images, // ONLY IMAGES
+      mediaTypes: ImagePicker.MediaTypeOptions.Images, 
       allowsEditing: true,
       aspect: [1, 1],
       quality: 0.8,
@@ -101,7 +100,6 @@ export default function SettingsScreen() {
     uploadTask.on(
       'state_changed',
       (snapshot) => {
-        // Optional: track upload progress
         const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
         console.log('Upload is ' + progress + '% done');
       },
@@ -122,7 +120,7 @@ export default function SettingsScreen() {
           photoURL: url
         });
 
-        // Log profile picture update
+        // Logs profile picture update
         logAction('profile_picture_updated', null, 'User updated profile picture');
 
         setPhotoURL(url);
@@ -132,7 +130,7 @@ export default function SettingsScreen() {
     );
   };
 
-  // Save name
+  // Saves name
   const handleSaveName = async () => {
     if (!name.trim()) {
       Alert.alert('Error', 'Name cannot be empty');
@@ -145,7 +143,7 @@ export default function SettingsScreen() {
       name: name.trim()
     });
 
-    // Log name change
+    // Logs name change
     logAction('profile_name_changed', null, `Changed from "${oldName}" to "${name.trim()}"`);
 
     Alert.alert('Success', 'Name updated successfully!');
@@ -153,7 +151,6 @@ export default function SettingsScreen() {
 
   // Change password
   const handleChangePassword = async () => {
-    // Validation
     if (!currentPassword) {
       Alert.alert('Error', 'Current password is required');
       return;
@@ -170,8 +167,8 @@ export default function SettingsScreen() {
       Alert.alert('Error', 'New passwords do not match');
       return;
     }
-    if (newPassword.length < 6) {
-      Alert.alert('Error', 'New password must be at least 6 characters');
+    if (newPassword.length < 8) {
+      Alert.alert('Error', 'New password must be at least 8 characters');
       return;
     }
 
@@ -185,11 +182,10 @@ export default function SettingsScreen() {
     const reauthResult = await reauthenticateWithCredential(auth.currentUser, credential);
 
     if (reauthResult.user) {
-      // Update password
+      // Updates password
       const updateResult = await updatePassword(auth.currentUser, newPassword);
       if (updateResult === undefined) {
         Alert.alert('Success', 'Password changed successfully!');
-        // Clear fields
         setCurrentPassword('');
         setNewPassword('');
         setConfirmPassword('');
@@ -286,7 +282,7 @@ export default function SettingsScreen() {
             value={newPassword}
             onChangeText={setNewPassword}
             secureTextEntry
-            placeholder="Enter new password (min 6 characters)"
+            placeholder="Enter new password (min 8 characters)"
           />
           <CustomInput
             label="Confirm New Password"

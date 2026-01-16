@@ -1,4 +1,3 @@
-// app/(citizen)/report-detail/[id].js (or your file path)
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { doc, getDoc } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
@@ -32,7 +31,7 @@ export default function CitizenReportDetail() {
       if (docSnap.exists()) {
         const data = docSnap.data();
 
-        // Check if report is soft-deleted
+        // Checks if report is soft-deleted
         if (data.isDeleted) {
           Alert.alert('Report Deleted', 'This report has been removed by an admin.');
           router.back();
@@ -112,7 +111,7 @@ export default function CitizenReportDetail() {
 
         <MergedReportsSection masterReport={report} role="citizen" />
 
-        {/* AFTER Evidence - Only shown when verified + has media */}
+        {/* AFTER Evidence: Only shown when verified + has media */}
         {report.status === 'verified' && (report.afterPhotos.length > 0 || report.afterVideos.length > 0) && (
           <View style={styles.afterSection}>
             <View style={styles.verifiedBanner}>

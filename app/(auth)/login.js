@@ -1,4 +1,3 @@
-// app/(auth)/login.js
 import { useRouter } from 'expo-router';
 import { sendPasswordResetEmail, signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
@@ -19,7 +18,6 @@ export default function LoginScreen() {
   const handleLogin = async () => {
     setLoading(true);
 
-    // Basic validation
     if (!email || !password) {
       Alert.alert('Missing Fields', 'Please fill in both email and password');
       setLoading(false);
@@ -30,10 +28,10 @@ export default function LoginScreen() {
       const userCredential = await signInWithEmailAndPassword(auth, email.trim(), password);
       const user = userCredential.user;
 
-      // Log successful login
+      // Logs successful login
       logAction('user_logged_in', user.uid, `Email: ${user.email}`);
 
-      // Get user document
+      // Gets user document
       const userDocRef = doc(db, 'UserMD', user.uid);
       const userDoc = await getDoc(userDocRef);
 
@@ -45,7 +43,7 @@ export default function LoginScreen() {
 
       const userData = userDoc.data();
 
-      // Check if account is disabled
+      // Checks if account is disabled
       if (userData.isDisabled) {
         await signOut(auth);
         Alert.alert(
@@ -59,7 +57,7 @@ export default function LoginScreen() {
 
       const userRole = userData.role || 'citizen';
 
-      // Navigate based on role
+      // Navigates based on role
       if (userRole === 'citizen') {
         router.replace('/(citizen)/home');
       } else if (userRole === 'dispatcher') {
@@ -93,7 +91,7 @@ export default function LoginScreen() {
     }
   };
 
-  // Handle forgot password
+  // Handles forgot password
   const handleForgotPassword = () => {
     Alert.prompt(
       'Forgot Password',

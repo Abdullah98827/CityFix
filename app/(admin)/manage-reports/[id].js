@@ -62,7 +62,7 @@ export default function AdminReportDetail() {
           onPress: async () => {
             await updateDoc(doc(db, 'reports', id), { isDeleted: true });
 
-            // Log deletion
+            // Logs deletion
             logAction('report_deleted', id, 'Soft deleted by admin');
 
             Alert.alert('Success', 'Report deleted', [{ text: 'OK', onPress: () => router.back() }]);

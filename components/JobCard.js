@@ -15,7 +15,7 @@ export default function JobCard({ job, showDistance = false, userLocation = null
 
   // Changes colour based on days remaining
   const getDeadlineColor = (daysLeft) => {
-    if (daysLeft < 0) return '#EF4444'; // Red meansOverdue
+    if (daysLeft < 0) return '#EF4444'; // Red means Overdue
     if (daysLeft === 0) return '#F59E0B'; // Orange means its due today
     if (daysLeft <= 2) return '#F59E0B'; // Orange also means its due soon
     return '#10B981'; // Green means on track

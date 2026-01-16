@@ -6,7 +6,6 @@ const { Expo } = require("expo-server-sdk");
 admin.initializeApp();
 const expo = new Expo();
 
-// Optional: set region if you want (closer to users)
 setGlobalOptions({ region: "europe-west1" });
 
 exports.onReportUpdate = onDocumentUpdated("reports/{reportId}", async (event) => {

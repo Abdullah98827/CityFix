@@ -1,4 +1,3 @@
-// app/(dispatcher)/report-detail/[id].js
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
   collection,
@@ -44,14 +43,14 @@ export default function DispatcherReportDetail() {
   const [deadline, setDeadline] = useState('');
   const [notes, setNotes] = useState('');
 
-  // Fetch report and list of engineers when screen loads
+  // Fetches report and list of engineers when screen loads
   useEffect(() => {
     const fetchData = async () => {
-      // Get the main report
+      // Gets the main report
       const reportDoc = await getDoc(doc(db, 'reports', id));
       if (reportDoc.exists()) {
         const data = reportDoc.data();
-        // Check if report is soft-deleted
+        // Checks if report is soft-deleted
         if (data.isDeleted) {
           Alert.alert('Report Deleted', 'This report has been removed by an admin.');
           router.back();
@@ -62,7 +61,7 @@ export default function DispatcherReportDetail() {
         Alert.alert('Error', 'Report not found');
       }
 
-      // Get all engineers for assignment dropdown
+      // Gets all engineers for assignment dropdown
       const engineersQuery = query(
         collection(db, 'UserMD'),
         where('role', '==', 'engineer')
@@ -79,9 +78,8 @@ export default function DispatcherReportDetail() {
     fetchData();
   }, [id]);
 
-  // Handle assigning the report to an engineer
+  // Handles assigning the report to an engineer
   const handleAssign = async () => {
-    // Basic validation
     if (!selectedEngineer) {
       Alert.alert('Missing Information', 'Please select an engineer');
       return;
@@ -93,7 +91,6 @@ export default function DispatcherReportDetail() {
 
     const selectedEngineerData = engineers.find((e) => e.id === selectedEngineer);
 
-    // Confirm with dispatcher
     Alert.alert(
       'Confirm Assignment',
       `Assign this report to ${selectedEngineerData?.name}?${
@@ -126,7 +123,7 @@ export default function DispatcherReportDetail() {
               assignedAt: new Date(),
             };
 
-            // Update the main report
+            // Updates the main report
             await updateDoc(doc(db, 'reports', id), updateData);
 
             // If there are merged duplicates, sync the status to them too
@@ -134,7 +131,7 @@ export default function DispatcherReportDetail() {
               await syncStatusToMergedReports(id, updateData);
             }
 
-            // Log the assignment
+            // Logs the assignment
             logAction(
               'report_assigned',
               id,
@@ -164,7 +161,6 @@ export default function DispatcherReportDetail() {
     );
   }
 
-  // Report not found
   if (!report) {
     return (
       <View style={styles.center}>
@@ -184,7 +180,7 @@ export default function DispatcherReportDetail() {
         />
         <ReportInfoSection report={report} />
         <MergedReportsSection masterReport={report} role="dispatcher" />
-        {/* Assignment form – only shown when report is submitted */}
+        {/* Assignment form, only shown when report is submitted */}
         {report.status === 'submitted' && (
           <View style={styles.workOrderSection}>
             <Text style={styles.sectionTitle}>Create Work Order</Text>
@@ -249,7 +245,7 @@ export default function DispatcherReportDetail() {
             )}
           </View>
         )}
-        {/* Show assignment info if already assigned */}
+        {/* Shows assignment info if already assigned */}
         {report.status !== 'submitted' && (
           <View style={styles.assignedInfo}>
             <Text style={styles.sectionTitle}>Assignment Details</Text>

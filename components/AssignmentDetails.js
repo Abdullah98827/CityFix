@@ -1,7 +1,7 @@
 import { StyleSheet, Text, View } from 'react-native';
 
 export default function AssignmentDetails({ report }) {
-  // Get deadline info with countdown
+  // Gets deadline info with countdown
   const getDeadlineInfo = () => {
     if (!report.deadline) return null;
     
