@@ -57,7 +57,7 @@ export default function NotificationsScreen({ onUnreadCountChange }) {
     return unsubscribe;
   }, [onUnreadCountChange]);
 
-  // Mark single notification as read
+  // Marks single notification as read
   const markAsRead = async (notificationId) => {
     await updateDoc(doc(db, 'UserMD', auth.currentUser.uid, 'notifications', notificationId), {
       read: true,

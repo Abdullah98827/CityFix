@@ -5,7 +5,7 @@ export default function AssignmentDetails({ report }) {
   const getDeadlineInfo = () => {
     if (!report.deadline) return null;
     
-    // Handle both Firestore Timestamp and string dates
+    // Handles both Firestore Timestamp and string dates
     let deadlineDate;
     if (report.deadline.toDate && typeof report.deadline.toDate === 'function') {
       // It's a Firestore Timestamp

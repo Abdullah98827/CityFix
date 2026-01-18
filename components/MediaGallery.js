@@ -21,7 +21,7 @@ export default function MediaGallery({
   onRemove,
   showRemove = false
 }) {
-  // Skip rendering if user is signed out
+  // Skips rendering if user is signed out
   if (!auth.currentUser) {
     return null;
   }

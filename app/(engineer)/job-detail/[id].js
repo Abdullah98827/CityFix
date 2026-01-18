@@ -5,10 +5,12 @@ import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Linking,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
-  View,
+  View
 } from 'react-native';
 import { auth, db, storage } from '../../../backend/firebase';
 import AssignmentDetails from '../../../components/AssignmentDetails';
@@ -26,6 +28,7 @@ import { syncStatusToMergedReports } from '../../../utils/statusSyncHelper';
 export default function EngineerJobDetail() {
   const { id } = useLocalSearchParams();
   const router = useRouter();
+
   const [job, setJob] = useState(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -33,9 +36,9 @@ export default function EngineerJobDetail() {
   const [resolutionNotes, setResolutionNotes] = useState('');
   const [afterMedia, setAfterMedia] = useState([]);
   const [newStatus, setNewStatus] = useState('in progress');
+
   const activeUploadTasks = useRef([]);
 
-  // Cancels all active uploads
   const cancelUpload = () => {
     activeUploadTasks.current.forEach(task => {
       if (task && typeof task.cancel === 'function') {
@@ -48,22 +51,17 @@ export default function EngineerJobDetail() {
     Alert.alert('Upload Cancelled', 'The upload has been cancelled.');
   };
 
-  // Fetches job details when screen loads
   useEffect(() => {
     const fetchJob = async () => {
       const jobDoc = await getDoc(doc(db, 'reports', id));
-
       if (jobDoc.exists()) {
         const jobData = { id: jobDoc.id, ...jobDoc.data() };
-
         if (jobData.isDeleted) {
           Alert.alert('Report Deleted', 'This report has been removed by an admin.');
           router.back();
           return;
         }
-
         setJob(jobData);
-
         if (jobData.resolutionNotes) setResolutionNotes(jobData.resolutionNotes);
 
         const loadedMedia = [];
@@ -81,21 +79,17 @@ export default function EngineerJobDetail() {
       } else {
         Alert.alert('Error', 'Job not found');
       }
-
       setLoading(false);
     };
-
     fetchJob();
   }, [id]);
 
-  // Picks from gallery for after evidence
   const handleAfterGalleryPick = async () => {
     const videoCount = afterMedia.filter(m => m.type === 'video').length;
     if (videoCount >= 1) {
       Alert.alert('Video Limit', 'You can only upload 1 video. Remove the existing video first.');
       return;
     }
-
     await MediaPicker.pickFromGallery(
       (newMedia) => {
         const newVideoCount = newMedia.filter(m => m.type === 'video').length;
@@ -110,14 +104,12 @@ export default function EngineerJobDetail() {
     );
   };
 
-  // Pick from camera for after evidence
   const handleAfterCameraPick = async () => {
     const videoCount = afterMedia.filter(m => m.type === 'video').length;
     if (videoCount >= 1) {
       Alert.alert('Video Limit', 'You can only upload 1 video. Remove the existing video first.');
       return;
     }
-
     await MediaPicker.pickFromCamera(
       (newMedia) => {
         const newVideoCount = newMedia.filter(m => m.type === 'video').length;
@@ -132,32 +124,23 @@ export default function EngineerJobDetail() {
     );
   };
 
-  // Remove media from after evidence
   const handleRemoveAfterMedia = (index) => {
     setAfterMedia(afterMedia.filter((_, i) => i !== index));
   };
 
-  // Start the job (changes status to 'in progress')
   const handleStartJob = async () => {
     setSubmitting(true);
-
     await updateDoc(doc(db, 'reports', id), {
       status: 'in progress',
       startedAt: new Date(),
     });
-
     setJob({ ...job, status: 'in progress' });
     setSubmitting(false);
-
-    // Log job started
     logAction('job_started', id);
-
     Alert.alert('Success', 'Job started successfully!');
   };
 
-  // Handle saving progress or marking as resolved
   const handleResolve = async () => {
-    // Validation for resolved status
     if (newStatus === 'resolved') {
       if (!resolutionNotes.trim()) {
         Alert.alert('Missing Information', 'Please add resolution notes');
@@ -179,7 +162,7 @@ export default function EngineerJobDetail() {
           onPress: async () => {
             setSubmitting(true);
             setUploadProgress('Preparing upload...');
-            activeUploadTasks.current = []; // Reset tasks
+            activeUploadTasks.current = [];
 
             const totalItems = afterMedia.length;
             let currentItem = 0;
@@ -189,7 +172,6 @@ export default function EngineerJobDetail() {
             for (let i = 0; i < afterMedia.length; i++) {
               const item = afterMedia[i];
               if (item.type !== 'photo' && item.type !== 'video') continue;
-
               currentItem++;
               setUploadProgress(`Uploading ${currentItem}/${totalItems}...`);
 
@@ -214,8 +196,6 @@ export default function EngineerJobDetail() {
               }
 
               const uploadTask = uploadBytesResumable(storageRef, blob);
-
-              // Track task for cancellation
               activeUploadTasks.current.push(uploadTask);
 
               const snapshot = await new Promise((resolve, reject) => {
@@ -226,7 +206,6 @@ export default function EngineerJobDetail() {
                     setUploadProgress(`Uploading ${currentItem}/${totalItems} (${progress}%)`);
                   },
                   (error) => {
-                    // Ignore cancel error
                     if (error.code === 'storage/canceled') {
                       resolve(null);
                     } else {
@@ -237,23 +216,14 @@ export default function EngineerJobDetail() {
                 );
               });
 
-              if (snapshot === null) {
-                // Upload was cancelled – skip this item
-                continue;
-              }
+              if (snapshot === null) continue;
 
               const url = await getDownloadURL(snapshot.ref);
-
-              if (isVideo) {
-                uploadedAfterVideoUrls.push(url);
-              } else {
-                uploadedAfterPhotoUrls.push(url);
-              }
+              if (isVideo) uploadedAfterVideoUrls.push(url);
+              else uploadedAfterPhotoUrls.push(url);
             }
 
-            // Clear tasks after success
             activeUploadTasks.current = [];
-
             setUploadProgress('Saving...');
 
             const updateData = {
@@ -270,7 +240,6 @@ export default function EngineerJobDetail() {
               await syncStatusToMergedReports(id, updateData);
             }
 
-            // Logs the action
             logAction(
               newStatus === 'resolved' ? 'job_resolved' : 'job_in_progress',
               id,
@@ -279,7 +248,6 @@ export default function EngineerJobDetail() {
 
             setSubmitting(false);
             setUploadProgress('');
-
             Alert.alert(
               'Success',
               newStatus === 'resolved' ? 'Job marked as resolved!' : 'Progress saved!',
@@ -289,6 +257,41 @@ export default function EngineerJobDetail() {
         },
       ]
     );
+  };
+
+  const handleNavigate = () => {
+    if (!job?.location?.latitude || !job?.location?.longitude) {
+      Alert.alert('No Location', 'This job does not have a valid location to navigate to.');
+      return;
+    }
+
+    const { latitude, longitude } = job.location;
+    const label = job.address?.full || job.address?.street || 'Job Location';
+
+    const scheme = Platform.select({ ios: 'maps:', android: 'geo:' });
+    const url = Platform.select({
+      ios: `${scheme}${latitude},${longitude}?q=${encodeURIComponent(label)}`,
+      android: `${scheme}${latitude},${longitude}?q=${encodeURIComponent(label)}`,
+    });
+
+    Linking.openURL(url).catch(() => {
+      Alert.alert('Error', 'Could not open maps. Make sure you have a maps app installed.');
+    });
+  };
+
+  const getDisplayAddress = () => {
+    const addr = job?.address;
+    if (!addr) return 'Address not available';
+
+    if (typeof addr === 'string') return addr;
+    if (addr.full) return addr.full;
+
+    const parts = [];
+    if (addr.placeName) parts.push(addr.placeName);
+    if (addr.street) parts.push(addr.street);
+    if (addr.city) parts.push(addr.city);
+    if (addr.postcode) parts.push(addr.postcode);
+    return parts.length > 0 ? parts.join(', ') : 'Address not available';
   };
 
   if (loading) {
@@ -318,15 +321,28 @@ export default function EngineerJobDetail() {
       <StatusTracker status={job.status} />
       <ScrollView style={styles.container}>
         <Text style={styles.sectionTitle}>Before Evidence</Text>
-        <MediaGallery
-          photos={beforePhotos}
-          videos={beforeVideos}
-        />
+        <MediaGallery photos={beforePhotos} videos={beforeVideos} />
+
         <ReportInfoSection report={job} />
         <MergedReportsSection masterReport={job} role="engineer" />
         <AssignmentDetails report={job} />
 
-        {/* Reopened state */}
+        <View style={styles.locationSection}>
+          <Text style={styles.sectionTitle}>Location</Text>
+          <Text style={styles.address}>{getDisplayAddress()}</Text>
+
+          {job.location && job.location.latitude && job.location.longitude ? (
+            <CustomButton
+              title="Navigate to Location"
+              onPress={handleNavigate}
+              variant="primary"
+              style={styles.navigateButton}
+            />
+          ) : (
+            <Text style={styles.noLocationText}>No location available</Text>
+          )}
+        </View>
+
         {job.status === 'reopened' && (
           <View style={styles.reopenedSection}>
             <Text style={styles.sectionTitle}>QA Feedback</Text>
@@ -353,117 +369,100 @@ export default function EngineerJobDetail() {
                 </View>
               </View>
             )}
-            {submitting ? (
-              <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color="#4F46E5" />
-                <Text style={styles.uploadProgressText}>{uploadProgress || 'Uploading...'}</Text>
-                <Text style={styles.uploadHelpText}>Please do not close the app</Text>
-                <CustomButton title="Cancel Upload" onPress={cancelUpload} variant="danger" style={{ marginTop: 20 }} />
-              </View>
-            ) : (
-              <CustomButton title="Start Fixing" onPress={handleStartJob} variant="secondary" />
-            )}
           </View>
         )}
 
-        {/* In progress state */}
-        {job.status === 'in progress' && (
-          <View style={styles.resolutionSection}>
-            <Text style={styles.sectionTitle}>Resolution</Text>
-            <Text style={styles.inputLabel}>Job Status</Text>
-            <View style={styles.statusButtons}>
-              <CustomButton
-                title="In Progress"
-                onPress={() => setNewStatus('in progress')}
-                variant={newStatus === 'in progress' ? 'secondary' : 'default'}
-              />
-              <CustomButton
-                title="Resolved"
-                onPress={() => setNewStatus('resolved')}
-                variant={newStatus === 'resolved' ? 'secondary' : 'default'}
-              />
-            </View>
-            <CustomInput
-              label="Resolution Notes"
-              placeholder="Describe what you did..."
-              value={resolutionNotes}
-              onChangeText={setResolutionNotes}
-              multiline
-              numberOfLines={4}
-            />
-            <Text style={styles.inputLabel}>After Evidence (Required)</Text>
-            <Text style={styles.helperText}>Max 1 video + 4 photos (5 items total)</Text>
-            <View style={styles.photoButtons}>
-              <CustomButton title="Gallery" onPress={handleAfterGalleryPick} variant="secondary" disabled={submitting} />
-              <CustomButton title="Camera" onPress={handleAfterCameraPick} variant="secondary" disabled={submitting} />
-            </View>
-            {afterMedia.length > 0 && (
-              <>
-                <Text style={styles.afterMediaTitle}>Tap to view fullscreen ({afterMedia.length}/5)</Text>
-                <MediaGallery
-                  photos={afterPhotos}
-                  videos={afterVideos}
-                  showRemove={true}
-                  onRemove={handleRemoveAfterMedia}
-                />
-              </>
-            )}
-            {submitting ? (
-              <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color="#4F46E5" />
-                <Text style={styles.uploadProgressText}>{uploadProgress || 'Uploading...'}</Text>
-                <Text style={styles.uploadHelpText}>Please do not close the app</Text>
-                <CustomButton title="Cancel Upload" onPress={cancelUpload} variant="danger" style={{ marginTop: 20 }} />
-              </View>
-            ) : (
-              <CustomButton
-                title={newStatus === 'resolved' ? 'Mark Resolved' : 'Save Progress'}
-                onPress={handleResolve}
-                variant="secondary"
-              />
-            )}
+        {submitting ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color="#4F46E5" />
+            <Text style={styles.uploadProgressText}>{uploadProgress || 'Uploading...'}</Text>
+            <Text style={styles.uploadHelpText}>Please do not close the app</Text>
+            <CustomButton title="Cancel Upload" onPress={cancelUpload} variant="danger" style={{ marginTop: 20 }} />
           </View>
-        )}
-
-        {/* Assigned state, just start job button */}
-        {job.status === 'assigned' && (
-          <View style={styles.startJobContainer}>
-            <Text style={styles.instructionText}>
-              Start working on this job
-            </Text>
-            {submitting ? (
-              <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color="#4F46E5" />
-                <Text style={styles.uploadProgressText}>Preparing...</Text>
-                <CustomButton title="Cancel" onPress={() => setSubmitting(false)} variant="danger" style={{ marginTop: 20 }} />
+        ) : (
+          <>
+            {job.status === 'assigned' && (
+              <View style={styles.startJobContainer}>
+                <Text style={styles.instructionText}>Start working on this job</Text>
+                <CustomButton title="Start Job" onPress={handleStartJob} variant="secondary" />
               </View>
-            ) : (
-              <CustomButton title="Start Job" onPress={handleStartJob} variant="secondary" />
             )}
-          </View>
-        )}
 
-        {/* Resolved or verified state, show details */}
-        {(job.status === 'resolved' || job.status === 'verified') && (
-          <View style={styles.resolvedSection}>
-            <Text style={styles.sectionTitle}>Resolution Details</Text>
-            <View style={styles.infoBox}>
-              <Text style={styles.label}>Resolution Notes:</Text>
-              <Text style={styles.notesText}>{job.resolutionNotes}</Text>
-              <View style={{ marginTop: 16 }}>
-                <MediaGallery
-                  photos={job.afterPhotos || []}
-                  videos={job.afterVideos || (job.afterVideo ? [job.afterVideo] : [])}
-                />
-              </View>
-              {job.status === 'verified' && (
-                <View style={styles.verifiedBadge}>
-                  <Text style={styles.verifiedText}>VERIFIED BY QA</Text>
-                  {job.qaFeedback && <Text style={styles.qaFeedbackSuccess}>{job.qaFeedback}</Text>}
+            {job.status === 'in progress' && (
+              <View style={styles.resolutionSection}>
+                <Text style={styles.sectionTitle}>Resolution</Text>
+                <Text style={styles.inputLabel}>Job Status</Text>
+                <View style={styles.statusButtons}>
+                  <CustomButton
+                    title="In Progress"
+                    onPress={() => setNewStatus('in progress')}
+                    variant={newStatus === 'in progress' ? 'secondary' : 'default'}
+                  />
+                  <CustomButton
+                    title="Resolved"
+                    onPress={() => setNewStatus('resolved')}
+                    variant={newStatus === 'resolved' ? 'secondary' : 'default'}
+                  />
                 </View>
-              )}
-            </View>
-          </View>
+
+                <CustomInput
+                  label="Resolution Notes"
+                  placeholder="Describe what you did..."
+                  value={resolutionNotes}
+                  onChangeText={setResolutionNotes}
+                  multiline
+                  numberOfLines={4}
+                />
+
+                <Text style={styles.inputLabel}>After Evidence (Required)</Text>
+                <Text style={styles.helperText}>Max 1 video + 4 photos (5 items total)</Text>
+                <View style={styles.photoButtons}>
+                  <CustomButton title="Gallery" onPress={handleAfterGalleryPick} variant="secondary" disabled={submitting} />
+                  <CustomButton title="Camera" onPress={handleAfterCameraPick} variant="secondary" disabled={submitting} />
+                </View>
+
+                {afterMedia.length > 0 && (
+                  <>
+                    <Text style={styles.afterMediaTitle}>Tap to view fullscreen ({afterMedia.length}/5)</Text>
+                    <MediaGallery
+                      photos={afterPhotos}
+                      videos={afterVideos}
+                      showRemove={true}
+                      onRemove={handleRemoveAfterMedia}
+                    />
+                  </>
+                )}
+
+                <CustomButton
+                  title={newStatus === 'resolved' ? 'Mark Resolved' : 'Save Progress'}
+                  onPress={handleResolve}
+                  variant="secondary"
+                />
+              </View>
+            )}
+
+            {(job.status === 'resolved' || job.status === 'verified') && (
+              <View style={styles.resolvedSection}>
+                <Text style={styles.sectionTitle}>Resolution Details</Text>
+                <View style={styles.infoBox}>
+                  <Text style={styles.label}>Resolution Notes:</Text>
+                  <Text style={styles.notesText}>{job.resolutionNotes}</Text>
+                  <View style={{ marginTop: 16 }}>
+                    <MediaGallery
+                      photos={job.afterPhotos || []}
+                      videos={job.afterVideos || (job.afterVideo ? [job.afterVideo] : [])}
+                    />
+                  </View>
+                  {job.status === 'verified' && (
+                    <View style={styles.verifiedBadge}>
+                      <Text style={styles.verifiedText}>VERIFIED BY QA</Text>
+                      {job.qaFeedback && <Text style={styles.qaFeedbackSuccess}>{job.qaFeedback}</Text>}
+                    </View>
+                  )}
+                </View>
+              </View>
+            )}
+          </>
         )}
 
         <View style={{ height: 40 }} />
@@ -504,4 +503,8 @@ const styles = StyleSheet.create({
   verifiedText: { fontSize: 18, fontWeight: '800', color: '#065f46', marginBottom: 8 },
   qaFeedbackSuccess: { fontSize: 15, color: '#047857', textAlign: 'center' },
   error: { fontSize: 18, color: '#dc2626' },
+  locationSection: { paddingHorizontal: 24, paddingVertical: 16, backgroundColor: '#f8fafc', marginHorizontal: 16, borderRadius: 12, marginBottom: 16 },
+  address: { fontSize: 16, color: '#475569', marginBottom: 12, fontWeight: '500' },
+  navigateButton: { marginTop: 8 },
+  noLocationText: { fontSize: 15, color: '#94a3b8', fontStyle: 'italic', textAlign: 'center' },
 });

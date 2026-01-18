@@ -33,7 +33,6 @@ export default function MyReports() {
 
     if (!auth.currentUser) return;
 
-    // Drafts- keep real-time
     const draftsQuery = query(
       collection(db, 'reports'),
       where('userId', '==', auth.currentUser.uid),

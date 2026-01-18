@@ -1,4 +1,3 @@
-import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import { collection, onSnapshot, orderBy, query, where } from 'firebase/firestore';
 import { useEffect, useRef, useState } from 'react';
@@ -23,28 +22,26 @@ export default function EngineerHome() {
   const [filteredJobs, setFilteredJobs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('active');
-  const [userLocation, setUserLocation] = useState(null);
   const unsubscribeRef = useRef(null);
   const [unreadCount, setUnreadCount] = useState(0);
 
-  // Gets users location for distance calculation
-  useEffect(() => {
-    (async () => {
-      let { status } = await Location.requestForegroundPermissionsAsync();
-      if (status === 'granted') {
-        let location = await Location.getCurrentPositionAsync({});
-        setUserLocation({
-          latitude: location.coords.latitude,
-          longitude: location.coords.longitude,
-        });
-      } else {
-        // Defaults to Northampton if permission denied
-        setUserLocation({ latitude: 52.2405, longitude: -0.9027 });
-      }
-    })();
-  }, []);
+  const councilLocation = {
+    latitude: 52.2405,
+    longitude: -0.9027,
+  };
 
-  // Fetches assigned jobs for this engineer
+  const calculateDistance = (lat1, lon1, lat2, lon2) => {
+    const R = 3959;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  };
+
   useEffect(() => {
     if (!auth.currentUser) {
       router.replace('/(auth)/login');
@@ -63,7 +60,7 @@ export default function EngineerHome() {
       setAllJobs(jobsList);
 
       let filtered = jobsList;
-      // Applies status filter first
+
       if (filter === 'active') {
         filtered = jobsList.filter(
           (j) => j.status === 'assigned' || j.status === 'in progress' || j.status === 'reopened'
@@ -72,132 +69,62 @@ export default function EngineerHome() {
         filtered = jobsList.filter(
           (j) => j.status === 'resolved' || j.status === 'verified'
         );
-      }
-
-      // Sorts by proximity if we have user location
-      if (userLocation) {
-        filtered = [...filtered].map(job => {
-          if (!job.location) return { ...job, _distance: Infinity };
-          const R = 3959;
-          const dLat = (job.location.latitude - userLocation.latitude) * Math.PI / 180;
-          const dLon = (job.location.longitude - userLocation.longitude) * Math.PI / 180;
-          const a =
-            Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-            Math.cos(userLocation.latitude * Math.PI / 180) *
-            Math.cos(job.location.latitude * Math.PI / 180) *
-            Math.sin(dLon / 2) * Math.sin(dLon / 2);
-          const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-          const distance = R * c;
-          return { ...job, _distance: distance };
-        }).sort((a, b) => a._distance - b._distance)
-          .map(({ _distance, ...job }) => job);
       }
 
       setFilteredJobs(filtered);
       setLoading(false);
     }, (error) => {
-      // Handles permission errors
-      console.warn('Snapshot error (likely logout):', error.message);
       setLoading(false);
     });
 
     unsubscribeRef.current = unsubscribe;
 
-    // Cleanup on unmount or auth change
-    return () => {
-      unsubscribe();
-    };
-  }, [filter, userLocation, router]);
+    return () => unsubscribe();
+  }, [filter, router]);
 
   const handleJobPress = (jobId) => {
     router.push(`/(engineer)/job-detail/${jobId}`);
   };
 
-  // Suggested Route – nearest neighbour order
   const handleSuggestedRoute = () => {
-    if (!userLocation) {
-      Alert.alert('Location Needed', 'Please enable location to get a suggested route');
-      return;
-    }
     if (filteredJobs.length === 0) {
       Alert.alert('No Jobs', 'You have no jobs to route');
       return;
     }
-    let remainingJobs = [...filteredJobs];
-    let route = [];
-    let currentPos = { latitude: userLocation.latitude, longitude: userLocation.longitude };
-    while (remainingJobs.length > 0) {
-      let closestJob = null;
-      let closestDist = Infinity;
-      remainingJobs.forEach(job => {
-        if (!job.location) return;
-        const dist = calculateDistance(
-          currentPos.latitude,
-          currentPos.longitude,
-          job.location.latitude,
-          job.location.longitude
-        );
-        if (dist < closestDist) {
-          closestDist = dist;
-          closestJob = job;
-        }
-      });
-      if (closestJob) {
-        route.push(closestJob);
-        remainingJobs = remainingJobs.filter(j => j.id !== closestJob.id);
-        currentPos = { latitude: closestJob.location.latitude, longitude: closestJob.location.longitude };
-      } else {
-        // If no location, just add remaining
-        route.push(...remainingJobs);
-        break;
-      }
-    }
-    setFilteredJobs(route);
-    Alert.alert('Route Updated', 'Jobs reordered for suggested route (nearest neighbour)');
+
+    const sorted = [...filteredJobs].sort((a, b) => {
+      const distA = a.location ? calculateDistance(
+        councilLocation.latitude,
+        councilLocation.longitude,
+        a.location.latitude,
+        a.location.longitude
+      ) : Infinity;
+      const distB = b.location ? calculateDistance(
+        councilLocation.latitude,
+        councilLocation.longitude,
+        b.location.latitude,
+        b.location.longitude
+      ) : Infinity;
+      return distA - distB;
+    });
+
+    setFilteredJobs(sorted);
+    Alert.alert('Route Updated', 'Jobs reordered nearest to Northampton Council first');
   };
 
   const handleResetOrder = () => {
-    // Force reload from Firestore to get original creation order
-    const q = query(
-      collection(db, 'reports'),
-      where('assignedTo', '==', auth.currentUser.uid),
-      where('isDeleted', '==', false),
-      orderBy('createdAt', 'desc')
-    );
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const jobsList = [];
-      snapshot.forEach((doc) => jobsList.push({ id: doc.id, ...doc.data() }));
-      let filtered = jobsList;
+    setFilteredJobs([...allJobs].filter(job => {
       if (filter === 'active') {
-        filtered = jobsList.filter(
-          (j) => j.status === 'assigned' || j.status === 'in progress' || j.status === 'reopened'
-        );
-      } else if (filter === 'completed') {
-        filtered = jobsList.filter(
-          (j) => j.status === 'resolved' || j.status === 'verified'
-        );
+        return ['assigned', 'in progress', 'reopened'].includes(job.status);
       }
-      setFilteredJobs(filtered);
-      Alert.alert('Order Reset', 'Jobs restored to original assignment order');
-    });
-    // Cleanup
-    return () => unsubscribe();
+      if (filter === 'completed') {
+        return ['resolved', 'verified'].includes(job.status);
+      }
+      return true;
+    }));
+    Alert.alert('Order Reset', 'Jobs restored to default order (newest first)');
   };
 
-  // Calculate distance in miles (same as JobCard)
-  const calculateDistance = (lat1, lon1, lat2, lon2) => {
-    const R = 3959;
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLon = (lon2 - lon1) * Math.PI / 180;
-    const a =
-      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-      Math.sin(dLon / 2) * Math.sin(dLon / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
-  };
-
-  // Calculate tab counts
   const activeCount = allJobs.filter(
     (j) => j.status === 'assigned' || j.status === 'in progress' || j.status === 'reopened'
   ).length;
@@ -206,7 +133,6 @@ export default function EngineerHome() {
   ).length;
   const allCount = allJobs.length;
 
-  // Loading state
   if (loading) {
     return (
       <View style={styles.center}>
@@ -223,7 +149,7 @@ export default function EngineerHome() {
         showSignOut={true}
         unreadCount={unreadCount}
       />
-      {/* Filter tabs */}
+
       <View style={styles.filterContainer}>
         <TouchableOpacity
           style={[styles.filterTab, filter === 'active' && styles.filterTabActive]}
@@ -250,7 +176,7 @@ export default function EngineerHome() {
           </Text>
         </TouchableOpacity>
       </View>
-      {/* Route Controls */}
+
       <View style={styles.routeControls}>
         <CustomButton
           title="Suggested Route"
@@ -259,13 +185,13 @@ export default function EngineerHome() {
           style={styles.routeButton}
         />
         <CustomButton
-          title="Reset"
+          title="Reset Order"
           onPress={handleResetOrder}
           variant="danger"
           style={styles.routeButton}
         />
       </View>
-      {/* Jobs list */}
+
       {filteredJobs.length === 0 ? (
         <View style={styles.empty}>
           <Text style={styles.emptyText}>No jobs found</Text>
@@ -278,14 +204,14 @@ export default function EngineerHome() {
           data={filteredJobs}
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => (
-            <TouchableOpacity onPress={() => handleJobPress(item.id)}>
-              <JobCard job={item} showDistance={true} userLocation={userLocation} />
+            <TouchableOpacity onPress={() => router.push(`/(engineer)/job-detail/${item.id}`)}>
+              <JobCard job={item} councilLocation={councilLocation} />
             </TouchableOpacity>
           )}
           contentContainerStyle={styles.list}
         />
       )}
-      {/* Hidden screen to get unread count for badge */}
+
       <View style={styles.hiddenNotifications}>
         <NotificationsScreen onUnreadCountChange={setUnreadCount} />
       </View>
@@ -321,6 +247,20 @@ const styles = StyleSheet.create({
   filterTextActive: {
     color: '#fff',
   },
+  routeControls: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    gap: 8,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e2e8f0',
+  },
+  routeButton: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 12,
+  },
   list: { padding: 16 },
   empty: {
     flex: 1,
@@ -346,20 +286,5 @@ const styles = StyleSheet.create({
     width: 1,
     height: 1,
     opacity: 0,
-  },
-  routeControls: {
-    flexDirection: 'row',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    gap: 8,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e2e8f0',
-  },
-  routeButton: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 12,
-    fontSize: 14,
   },
 });

@@ -1,3 +1,4 @@
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
   collection,
@@ -12,6 +13,7 @@ import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -33,24 +35,22 @@ export default function DispatcherReportDetail() {
   const { id } = useLocalSearchParams();
   const router = useRouter();
 
-  // State for report data and assignment form
   const [report, setReport] = useState(null);
   const [engineers, setEngineers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [selectedEngineer, setSelectedEngineer] = useState('');
   const [priority, setPriority] = useState('medium');
-  const [deadline, setDeadline] = useState('');
+  const [deadline, setDeadline] = useState(null);
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const [notes, setNotes] = useState('');
 
-  // Fetches report and list of engineers when screen loads
+  // Fetches report and engineers
   useEffect(() => {
     const fetchData = async () => {
-      // Gets the main report
       const reportDoc = await getDoc(doc(db, 'reports', id));
       if (reportDoc.exists()) {
         const data = reportDoc.data();
-        // Checks if report is soft-deleted
         if (data.isDeleted) {
           Alert.alert('Report Deleted', 'This report has been removed by an admin.');
           router.back();
@@ -61,7 +61,6 @@ export default function DispatcherReportDetail() {
         Alert.alert('Error', 'Report not found');
       }
 
-      // Gets all engineers for assignment dropdown
       const engineersQuery = query(
         collection(db, 'UserMD'),
         where('role', '==', 'engineer')
@@ -78,14 +77,32 @@ export default function DispatcherReportDetail() {
     fetchData();
   }, [id]);
 
-  // Handles assigning the report to an engineer
+  // Handles date picker change
+  const onDateChange = (event, selectedDate) => {
+    const currentDate = selectedDate || deadline;
+    setShowDatePicker(Platform.OS === 'ios');
+    if (selectedDate) {
+      setDeadline(selectedDate);
+    }
+  };
+
+  const formatDate = (date) => {
+    if (!date) return 'Not set';
+    return date.toLocaleDateString('en-GB', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    });
+  };
+
+  // Assigns reports
   const handleAssign = async () => {
     if (!selectedEngineer) {
       Alert.alert('Missing Information', 'Please select an engineer');
       return;
     }
-    if (!deadline) {
-      Alert.alert('Missing Information', 'Please set a deadline');
+    if (!deadline || deadline <= new Date()) {
+      Alert.alert('Invalid Deadline', 'Please select a future date');
       return;
     }
 
@@ -105,37 +122,26 @@ export default function DispatcherReportDetail() {
           onPress: async () => {
             setSubmitting(true);
 
-            // Validate deadline is a future date
-            const deadlineDate = new Date(deadline);
-            if (isNaN(deadlineDate.getTime()) || deadlineDate <= new Date()) {
-              Alert.alert('Invalid Deadline', 'Please enter a valid future date like YYYY-MM-DD');
-              setSubmitting(false);
-              return;
-            }
-
             const updateData = {
               status: 'assigned',
               assignedTo: selectedEngineer,
               assignedToName: selectedEngineerData?.name,
               priority,
-              deadline: deadlineDate,
+              deadline: deadline,
               dispatcherNotes: notes,
               assignedAt: new Date(),
             };
 
-            // Updates the main report
             await updateDoc(doc(db, 'reports', id), updateData);
 
-            // If there are merged duplicates, sync the status to them too
             if (report.duplicateCount > 0) {
               await syncStatusToMergedReports(id, updateData);
             }
 
-            // Logs the assignment
             logAction(
               'report_assigned',
               id,
-              `Assigned to: ${selectedEngineerData?.name}, Priority: ${priority}, Deadline: ${deadline}`
+              `Assigned to: ${selectedEngineerData?.name}, Priority: ${priority}, Deadline: ${formatDate(deadline)}`
             );
 
             setSubmitting(false);
@@ -152,7 +158,6 @@ export default function DispatcherReportDetail() {
     );
   };
 
-  // Loading state
   if (loading) {
     return (
       <View style={styles.center}>
@@ -172,18 +177,23 @@ export default function DispatcherReportDetail() {
   return (
     <View style={styles.wrapper}>
       <ReportHeader title="Report Details" />
+
       {!report.isDraft && <StatusTracker status={report.status} />}
+
       <ScrollView style={styles.container}>
         <MediaGallery
           photos={report.photoUrls || report.photos || []}
           videos={report.videoUrls || []}
         />
+
         <ReportInfoSection report={report} />
+
         <MergedReportsSection masterReport={report} role="dispatcher" />
-        {/* Assignment form, only shown when report is submitted */}
+
         {report.status === 'submitted' && (
           <View style={styles.workOrderSection}>
             <Text style={styles.sectionTitle}>Create Work Order</Text>
+
             <Text style={styles.inputLabel}>Assign to Engineer</Text>
             {engineers.length === 0 ? (
               <Text style={styles.noEngineers}>No engineers available</Text>
@@ -208,6 +218,7 @@ export default function DispatcherReportDetail() {
                 ))}
               </View>
             )}
+
             <Text style={styles.inputLabel}>Priority</Text>
             <View style={styles.priorityButtons}>
               {['low', 'medium', 'high', 'urgent'].map((p) => (
@@ -224,12 +235,30 @@ export default function DispatcherReportDetail() {
                 </TouchableOpacity>
               ))}
             </View>
-            <CustomInput
-              label="Deadline (e.g. 2025-12-31)"
-              placeholder="YYYY-MM-DD"
-              value={deadline}
-              onChangeText={setDeadline}
-            />
+
+            <Text style={styles.inputLabel}>Deadline</Text>
+            <TouchableOpacity
+              style={styles.dateDropdown}
+              onPress={() => setShowDatePicker(true)}
+            >
+              <Text style={styles.dateDropdownText}>
+                {deadline ? formatDate(deadline) : 'Select deadline (DD/MM/YYYY)'}
+              </Text>
+            </TouchableOpacity>
+
+            {showDatePicker && (
+              <DateTimePicker
+                testID="dateTimePicker"
+                value={deadline || new Date()}
+                mode="date"
+                is24Hour={true}
+                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                onChange={onDateChange}
+                minimumDate={new Date()} // No past dates allowed
+                style={Platform.OS === 'ios' ? { width: '100%' } : {}}
+              />
+            )}
+
             <CustomInput
               label="Dispatcher Notes (optional)"
               placeholder="Add any instructions or notes..."
@@ -238,6 +267,7 @@ export default function DispatcherReportDetail() {
               multiline
               numberOfLines={4}
             />
+
             {submitting ? (
               <ActivityIndicator size="large" color="#4F46E5" style={{ marginVertical: 20 }} />
             ) : (
@@ -245,7 +275,7 @@ export default function DispatcherReportDetail() {
             )}
           </View>
         )}
-        {/* Shows assignment info if already assigned */}
+
         {report.status !== 'submitted' && (
           <View style={styles.assignedInfo}>
             <Text style={styles.sectionTitle}>Assignment Details</Text>
@@ -261,7 +291,9 @@ export default function DispatcherReportDetail() {
               <View style={styles.infoRow}>
                 <Text style={styles.label}>Deadline:</Text>
                 <Text style={styles.value}>
-                  {report.deadline ? report.deadline.toDate().toLocaleDateString('en-GB') : 'Not set'}
+                  {report.deadline
+                    ? new Date(report.deadline.seconds * 1000).toLocaleDateString('en-GB')
+                    : 'Not set'}
                 </Text>
               </View>
               {report.dispatcherNotes && (
@@ -273,6 +305,7 @@ export default function DispatcherReportDetail() {
             </View>
           </View>
         )}
+
         <View style={{ height: 40 }} />
       </ScrollView>
     </View>
@@ -317,6 +350,19 @@ const styles = StyleSheet.create({
   priorityBtnSelected: { backgroundColor: '#4F46E5', borderColor: '#4F46E5' },
   priorityText: { fontSize: 13, fontWeight: '700', color: '#64748b' },
   priorityTextSelected: { color: '#fff' },
+  dateDropdown: {
+    backgroundColor: '#f1f5f9',
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#e2e8f0',
+    marginBottom: 24,
+    alignItems: 'center',
+  },
+  dateDropdownText: {
+    fontSize: 16,
+    color: '#334155',
+  },
   assignedInfo: { paddingHorizontal: 24, paddingBottom: 24 },
   infoBox: { backgroundColor: '#f8fafc', padding: 16, borderRadius: 12 },
   infoRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 },

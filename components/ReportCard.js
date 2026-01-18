@@ -4,12 +4,12 @@ import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 export default function ReportCard({ report, onPress }) {
   const router = useRouter();
 
-  // Quick safety check, no report or missing id means don't render anything
+  // Quick safety check
   if (!report || !report.id) {
     return null;
   }
 
-  // Simple helper to pick the right colour for the status badge
+  // Helper for status color
   const getStatusColor = (status) => {
     switch (status) {
       case 'submitted': return '#F59E0B';
@@ -23,7 +23,7 @@ export default function ReportCard({ report, onPress }) {
     }
   };
 
-  // Handle tapping the card, use custom onPress if given, otherwise go to detail
+  // Handle press
   const handlePress = () => {
     if (onPress) {
       onPress(report.id);
@@ -32,21 +32,38 @@ export default function ReportCard({ report, onPress }) {
     }
   };
 
-  // Fallbacks so we don't crash if media fields are missing 
+  // Media fallbacks
   const photoUrls = report.photoUrls || report.photos || [];
   const videoUrls = report.videoUrls || (report.video ? [report.video] : (report.videos || []));
   const firstPhoto = photoUrls[0];
   const hasVideo = videoUrls.length > 0;
 
+  // Gets clean address string, prefers .full if present, otherwise builds it
+  const displayAddress = () => {
+    const addr = report.address;
+    if (!addr) return 'Location saved';
+
+    // If full exists and is a string, use it
+    if (typeof addr === 'string') return addr;
+    if (addr.full && typeof addr.full === 'string') return addr.full;
+
+    // Otherwise build from parts
+    const parts = [];
+    if (addr.placeName) parts.push(addr.placeName);
+    if (addr.street) parts.push(addr.street);
+    if (addr.city) parts.push(addr.city);
+    if (addr.postcode) parts.push(addr.postcode);
+    return parts.length > 0 ? parts.join(', ') : 'Location saved';
+  };
+
   return (
     <TouchableOpacity style={styles.card} onPress={handlePress}>
-      {/* Media preview, photo first, then video, then placeholder */}
+      {/* Media preview */}
       {firstPhoto ? (
         <Image source={{ uri: firstPhoto }} style={styles.photo} />
       ) : hasVideo ? (
         <View style={styles.videoThumbnail}>
           <View style={styles.playIcon}>
-            <Text style={styles.playText}>▶</Text>
           </View>
           <Text style={styles.videoLabel}>VIDEO</Text>
         </View>
@@ -56,7 +73,7 @@ export default function ReportCard({ report, onPress }) {
         </View>
       )}
 
-      {/* All the text info */}
+      {/* Info */}
       <View style={styles.info}>
         <Text style={styles.title} numberOfLines={2}>
           {report.title || 'Untitled Report'}
@@ -65,7 +82,6 @@ export default function ReportCard({ report, onPress }) {
           {report.category || 'Uncategorized'}
         </Text>
 
-        {/* Show merged badge if this report has duplicates */}
         {report.duplicateCount > 0 && (
           <View style={styles.mergedBadge}>
             <Text style={styles.mergedText}>
@@ -76,8 +92,9 @@ export default function ReportCard({ report, onPress }) {
 
         <View style={styles.bottomRow}>
           <Text style={styles.address} numberOfLines={1}>
-            {report.address || 'Location saved'}
+            {displayAddress()}
           </Text>
+
           <View style={[styles.statusBadge, { backgroundColor: getStatusColor(report.status) }]}>
             <Text style={styles.statusText}>
               {report.status?.toUpperCase() || 'UNKNOWN'}
@@ -92,6 +109,7 @@ export default function ReportCard({ report, onPress }) {
     </TouchableOpacity>
   );
 }
+
 const styles = StyleSheet.create({
   card: {
     backgroundColor: '#fff',

@@ -100,7 +100,7 @@ export default function QAVerifyScreen() {
               await syncStatusToMergedReports(id, updateData);
             }
 
-            // Log verification
+            // Logs verification
             logAction('report_verified', id, `Feedback: ${qaFeedback.trim() || 'Approved'}`);
 
             setSubmitting(false);

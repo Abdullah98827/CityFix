@@ -26,13 +26,18 @@ export default function ReportIssue() {
   const router = useRouter();
   const { draftId } = useLocalSearchParams();
   const searchTimeout = useRef(null);
-
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState('');
   const [media, setMedia] = useState([]);
   const [location, setLocation] = useState({ latitude: 52.3555177, longitude: -1.1743197 });
-  const [address, setAddress] = useState('Search for your location...');
+  const [address, setAddress] = useState({
+    placeName: '',
+    street: '',
+    city: '',
+    postcode: '',
+    full: 'Search for your location...',
+  });
   const [searchText, setSearchText] = useState('');
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -44,10 +49,8 @@ export default function ReportIssue() {
 
   const isEditMode = !!draftId;
 
-  // Tracks active upload tasks for cancellation
   const activeUploadTasks = useRef([]);
 
-  // Cancels all active uploads
   const cancelUpload = () => {
     activeUploadTasks.current.forEach(task => {
       if (task && typeof task.cancel === 'function') {
@@ -60,43 +63,35 @@ export default function ReportIssue() {
     Alert.alert('Upload Cancelled', 'The upload has been cancelled.');
   };
 
-  // Loads categories from ConfigMD
   useEffect(() => {
     const fetchCategories = async () => {
       const docRef = doc(db, 'ConfigMD', 'categories');
       const docSnap = await getDoc(docRef);
-
       if (docSnap.exists() && docSnap.data().list) {
         setCategories(docSnap.data().list);
       } else {
         setCategories(['Pothole', 'Streetlight', 'Missed Bin', 'Flooding', 'Graffiti', 'Other']);
       }
     };
-
     fetchCategories();
   }, []);
 
-  // Gets user's name for display
   useEffect(() => {
     const getUserName = async () => {
       if (!auth.currentUser) return;
-
       const snap = await getDoc(doc(db, 'UserMD', auth.currentUser.uid));
       if (snap.exists()) {
         setUserName(snap.data().name || 'Citizen');
       }
     };
-
     getUserName();
   }, []);
 
-  // Loads draft if editing
   useEffect(() => {
     if (!draftId) return;
 
     const loadDraft = async () => {
       const draftDoc = await getDoc(doc(db, 'reports', draftId));
-
       if (draftDoc.exists()) {
         const data = draftDoc.data();
         setTitle(data.title || '');
@@ -113,8 +108,26 @@ export default function ReportIssue() {
           loadedMedia.push({ uri: data.video, type: 'video' });
         }
         setMedia(loadedMedia);
-        setAddress(data.address || '');
-        setSearchText(data.address || '');
+
+        if (data.address && typeof data.address === 'object') {
+          setAddress({
+            placeName: data.address.placeName || '',
+            street: data.address.street || '',
+            city: data.address.city || '',
+            postcode: data.address.postcode || '',
+            full: data.address.full || data.address || '',
+          });
+          setSearchText(data.address.full || data.address || '');
+        } else {
+          setAddress({
+            placeName: '',
+            street: '',
+            city: '',
+            postcode: '',
+            full: data.address || 'Search for your location...',
+          });
+          setSearchText(data.address || '');
+        }
 
         if (data.location) {
           setLocation({ latitude: data.location.latitude, longitude: data.location.longitude });
@@ -122,43 +135,67 @@ export default function ReportIssue() {
       } else {
         Alert.alert('Error', 'Failed to load draft');
       }
-
       setInitialLoading(false);
     };
-
     loadDraft();
   }, [draftId]);
 
-  // Updates address from coordinates
   const updateAddress = async (lat, lng) => {
     const results = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lng });
-
     if (results && results.length > 0) {
       const result = results[0];
-      const addr = `${result.street || ''}, ${result.city || ''} ${result.postalCode || ''}`.trim() || 'Unknown address';
-      setAddress(addr);
-      setSearchText(addr);
+
+      let streetPart = [result.streetNumber || '', result.street || '']
+        .filter(Boolean)
+        .join(' ')
+        .trim();
+      let cityPart = result.city || result.postalTown || result.region || '';
+      let postcodePart = result.postalCode || '';
+
+      if (postcodePart) {
+        postcodePart = postcodePart.toUpperCase().replace(/\s+/g, ' ').trim();
+      }
+
+      const fullAddr = [streetPart, cityPart, postcodePart]
+        .filter(Boolean)
+        .join(', ') || 'Unknown address';
+
+      setAddress(prev => ({
+        ...prev,
+        street: streetPart,
+        city: cityPart,
+        postcode: postcodePart,
+        full: fullAddr,
+      }));
+      setSearchText(fullAddr);
     } else {
-      setAddress('Address not found');
+      setAddress(prev => ({
+        ...prev,
+        street: '',
+        city: '',
+        postcode: '',
+        full: 'Address not found',
+      }));
     }
   };
 
-  // Searches for places using Google Places API
   const searchPlaces = async (text) => {
     if (!text || text.length < 3) {
       setSuggestions([]);
       return;
     }
-
     const apiKey = process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY;
-    const url = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(text)}&key=${apiKey}&language=en`;
-
+    const url = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(text)}&key=${apiKey}&language=en&components=country:gb`;
+    
     const response = await fetch(url);
-    const data = await response.json();
-
-    if (data.predictions) {
-      setSuggestions(data.predictions.slice(0, 5));
-      setShowSuggestions(true);
+    if (response.ok) {
+      const data = await response.json();
+      if (data.predictions) {
+        setSuggestions(data.predictions.slice(0, 5));
+        setShowSuggestions(true);
+      } else {
+        setSuggestions([]);
+      }
     } else {
       setSuggestions([]);
     }
@@ -177,30 +214,63 @@ export default function ReportIssue() {
     Keyboard.dismiss();
 
     const apiKey = process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY;
-    const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&key=${apiKey}`;
+    const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&key=${apiKey}&fields=address_components,formatted_address,geometry,name`;
 
     const response = await fetch(url);
-    const data = await response.json();
+    if (response.ok) {
+      const data = await response.json();
+      if (data.result?.geometry?.location) {
+        const { lat, lng } = data.result.geometry.location;
+        setLocation({ latitude: lat, longitude: lng });
 
-    if (data.result?.geometry?.location) {
-      const { lat, lng } = data.result.geometry.location;
-      setLocation({ latitude: lat, longitude: lng });
-      setAddress(description);
+        const components = data.result.address_components || [];
+        const full = data.result.formatted_address || description;
+        const placeName = data.result.name || ''; 
+
+        let street = '';
+        let city = '';
+        let postcode = '';
+
+        components.forEach(comp => {
+          const types = comp.types;
+          if (types.includes('street_number') || types.includes('route')) {
+            street = (street ? street + ' ' : '') + comp.long_name;
+          }
+          if (types.includes('postal_town') || types.includes('locality') || (types.includes('administrative_area_level_2') && !city)) {
+            city = comp.long_name;
+          }
+          if (types.includes('postal_code')) {
+            postcode = comp.long_name.toUpperCase().replace(/\s+/g, ' ').trim();
+          }
+        });
+
+        if (!street && full.includes(',')) {
+          street = full.split(',')[0].trim();
+        }
+
+        setAddress({
+          placeName: placeName.trim(),
+          street: street.trim(),
+          city: city.trim(),
+          postcode: postcode.trim(),
+          full,
+        });
+      } else {
+        Alert.alert('Location Error', 'Failed to get location details');
+      }
     } else {
-      Alert.alert('Location Error', 'Failed to get location details');
+      Alert.alert('Error', 'Could not fetch place details');
     }
   };
 
-  // Media picker functions
   const handleGalleryPick = async () => {
     const videoCount = media.filter(m => m.type === 'video').length;
     if (videoCount >= 1) {
       Alert.alert('Video Limit', 'You can only upload 1 video. Remove the existing video first.');
       return;
     }
-
     await MediaPicker.pickFromGallery(
-      (newMedia) => {
+      newMedia => {
         const newVideoCount = newMedia.filter(m => m.type === 'video').length;
         if (videoCount + newVideoCount > 1) {
           Alert.alert('Video Limit', 'You can only upload 1 video maximum.');
@@ -219,9 +289,8 @@ export default function ReportIssue() {
       Alert.alert('Video Limit', 'You can only upload 1 video. Remove the existing video first.');
       return;
     }
-
     await MediaPicker.pickFromCamera(
-      (newMedia) => {
+      newMedia => {
         const newVideoCount = newMedia.filter(m => m.type === 'video').length;
         if (videoCount + newVideoCount > 1) {
           Alert.alert('Video Limit', 'You can only upload 1 video maximum.');
@@ -234,9 +303,8 @@ export default function ReportIssue() {
     );
   };
 
-  const removeMedia = (index) => setMedia(media.filter((_, i) => i !== index));
+  const removeMedia = index => setMedia(media.filter((_, i) => i !== index));
 
-  // Saves as draft
   const handleSaveDraft = async () => {
     if (!title.trim()) {
       Alert.alert('Missing Information', 'Please add a title for your report');
@@ -256,7 +324,13 @@ export default function ReportIssue() {
       photos,
       videos,
       location,
-      address,
+      address: {
+        placeName: address.placeName.trim(),
+        full: [address.placeName, address.street, address.city, address.postcode].filter(Boolean).join(', ') || 'Unknown',
+        street: address.street.trim(),
+        city: address.city.trim(),
+        postcode: address.postcode.trim(),
+      },
       userId: auth.currentUser.uid,
       userName,
       status: 'draft',
@@ -275,21 +349,21 @@ export default function ReportIssue() {
       draftReportId = docRef.id;
     }
 
-    // Log draft saved
     logAction('draft_saved', draftReportId, `Title: ${title.trim()}`);
-
     setLoading(false);
     setUploadProgress('');
-
     Alert.alert('Success', 'Draft saved successfully!', [
       { text: 'OK', onPress: () => router.back() }
     ]);
   };
 
-  // Submit report with resilience and cancel support
   const handleSubmit = async () => {
     if (!title || !description || !category || !location || media.length === 0) {
       Alert.alert('Incomplete', 'Please complete all fields and add at least one photo or video');
+      return;
+    }
+    if (!address.postcode.trim()) {
+      Alert.alert('Missing Postcode', 'Please enter a postcode before submitting');
       return;
     }
 
@@ -305,7 +379,6 @@ export default function ReportIssue() {
     for (let i = 0; i < media.length; i++) {
       const item = media[i];
       if (item.type !== 'photo' && item.type !== 'video') continue;
-
       currentItem++;
       setUploadProgress(`Uploading ${currentItem}/${totalItems}...`);
 
@@ -330,18 +403,16 @@ export default function ReportIssue() {
       }
 
       const uploadTask = uploadBytesResumable(storageRef, blob);
-
       activeUploadTasks.current.push(uploadTask);
 
       const snapshot = await new Promise((resolve, reject) => {
         uploadTask.on(
           'state_changed',
-          (snap) => {
+          snap => {
             const progress = Math.round((snap.bytesTransferred / snap.totalBytes) * 100);
             setUploadProgress(`Uploading ${currentItem}/${totalItems} (${progress}%)`);
           },
-          (error) => {
-            // Ignores cancel error, don't reject
+          error => {
             if (error.code === 'storage/canceled') {
               resolve(null);
             } else {
@@ -352,22 +423,14 @@ export default function ReportIssue() {
         );
       });
 
-      if (snapshot === null) {
-        // Upload was cancelled so skip this item
-        continue;
-      }
+      if (snapshot === null) continue;
 
       const url = await getDownloadURL(snapshot.ref);
-
-      if (isVideo) {
-        uploadedVideoUrls.push(url);
-      } else {
-        uploadedPhotoUrls.push(url);
-      }
+      if (isVideo) uploadedVideoUrls.push(url);
+      else uploadedPhotoUrls.push(url);
     }
 
     activeUploadTasks.current = [];
-
     setUploadProgress('Saving report...');
 
     const reportData = {
@@ -380,7 +443,13 @@ export default function ReportIssue() {
         latitude: location.latitude,
         longitude: location.longitude,
       },
-      address,
+      address: {
+        placeName: address.placeName.trim(),
+        full: [address.placeName, address.street, address.city, address.postcode].filter(Boolean).join(', ') || 'Unknown',
+        street: address.street.trim(),
+        city: address.city.trim(),
+        postcode: address.postcode.trim(),
+      },
       userId: auth.currentUser.uid,
       userName,
       status: 'submitted',
@@ -399,17 +468,12 @@ export default function ReportIssue() {
       reportId = docRef.id;
     }
 
-    // Log report submitted
     logAction('report_submitted', reportId, `Category: ${category}`);
-
     setLoading(false);
     setUploadProgress('');
-
-    Alert.alert(
-      'Success',
-      'Your report has been submitted successfully!',
-      [{ text: 'OK', onPress: () => router.back() }]
-    );
+    Alert.alert('Success', 'Your report has been submitted successfully!', [
+      { text: 'OK', onPress: () => router.back() }
+    ]);
   };
 
   if (initialLoading) {
@@ -445,7 +509,7 @@ export default function ReportIssue() {
           />
           <Text style={styles.label}>Category</Text>
           <View style={styles.categoryGrid}>
-            {categories.map((cat) => (
+            {categories.map(cat => (
               <TouchableOpacity
                 key={cat}
                 style={[styles.categoryCard, category === cat && styles.categorySelected]}
@@ -459,14 +523,14 @@ export default function ReportIssue() {
           <View style={styles.searchContainer}>
             <CustomInput
               style={styles.searchInput}
-              placeholder="Search for street, postcode or place..."
+              placeholder="Search for street, postcode, place or business..."
               value={searchText}
               onChangeText={handleSearchChange}
               onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
             />
             {showSuggestions && suggestions.length > 0 && (
               <View style={styles.suggestionsBox}>
-                {suggestions.map((item) => (
+                {suggestions.map(item => (
                   <TouchableOpacity
                     key={item.place_id}
                     style={styles.suggestionItem}
@@ -493,7 +557,7 @@ export default function ReportIssue() {
                 draggable
                 pinColor="#EF4444"
                 coordinate={{ latitude: location.latitude, longitude: location.longitude }}
-                onDragEnd={(e) => {
+                onDragEnd={e => {
                   const coord = e.nativeEvent.coordinate;
                   setLocation(coord);
                   updateAddress(coord.latitude, coord.longitude);
@@ -504,7 +568,40 @@ export default function ReportIssue() {
               <Text style={styles.overlayText}>Drag pin to adjust location</Text>
             </View>
           </View>
-          <Text style={styles.addressText}>{address}</Text>
+
+          <Text style={styles.addressText}>
+            Selected: {address.placeName ? `${address.placeName} — ` : ''}{address.full || 'Not set'}
+          </Text>
+
+          <CustomInput
+            label="Business Name (optional)"
+            placeholder="e.g. Sam's Chicken"
+            value={address.placeName}
+            onChangeText={text => setAddress(prev => ({ ...prev, placeName: text }))}
+          />
+
+          <CustomInput
+            label="Street / Building"
+            placeholder="e.g. 19 Drapery"
+            value={address.street}
+            onChangeText={text => setAddress(prev => ({ ...prev, street: text }))}
+          />
+
+          <CustomInput
+            label="City / Town"
+            placeholder="e.g. Northampton"
+            value={address.city}
+            onChangeText={text => setAddress(prev => ({ ...prev, city: text }))}
+          />
+
+          <CustomInput
+            label="Postcode"
+            placeholder="e.g. NN1 2ET"
+            value={address.postcode}
+            onChangeText={text => setAddress(prev => ({ ...prev, postcode: text.toUpperCase() }))}
+            autoCapitalize="characters"
+          />
+
           <Text style={styles.label}>Evidence (Required)</Text>
           <Text style={styles.helperText}>Max 1 video + 4 photos (5 items total)</Text>
           <Text style={styles.warningText}>Videos: 10-15 seconds max, under 15MB</Text>
@@ -539,10 +636,10 @@ export default function ReportIssue() {
               <ActivityIndicator size="large" color="#4F46E5" />
               <Text style={styles.uploadProgressText}>{uploadProgress || 'Uploading...'}</Text>
               <Text style={styles.uploadHelpText}>Please do not close the app</Text>
-              <CustomButton 
-                title="Cancel Upload" 
-                onPress={cancelUpload} 
-                variant="danger" 
+              <CustomButton
+                title="Cancel Upload"
+                onPress={cancelUpload}
+                variant="danger"
                 style={{ marginTop: 20 }}
               />
             </View>
@@ -600,7 +697,7 @@ const styles = StyleSheet.create({
   map: { width: '100%', height: '100%' },
   mapOverlay: { position: 'absolute', top: 12, left: 0, right: 0, alignItems: 'center' },
   overlayText: { backgroundColor: 'rgba(0,0,0,0.65)', color: '#fff', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, fontSize: 14, fontWeight: '600' },
-  addressText: { fontSize: 15, color: '#333', textAlign: 'center', marginBottom: 20, fontWeight: '500' },
+  addressText: { fontSize: 15, color: '#333', textAlign: 'center', marginBottom: 16, fontWeight: '500' },
   photoButtons: { flexDirection: 'row', gap: 12, marginBottom: 15 },
   mediaLabel: { fontSize: 13, color: '#64748b', marginBottom: 8, fontStyle: 'italic', textAlign: 'center' },
   photoCount: { textAlign: 'center', marginVertical: 10, color: '#666', fontSize: 15 },

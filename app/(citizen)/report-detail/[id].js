@@ -75,7 +75,6 @@ export default function CitizenReportDetail() {
       <ReportHeader title="Report Details" />
       {!report.isDraft && <StatusTracker status={report.status} />}
       <ScrollView style={styles.container}>
-        {/* Draft Banner */}
         {report.isDraft && (
           <View style={styles.draftBanner}>
             <View style={styles.draftInfo}>

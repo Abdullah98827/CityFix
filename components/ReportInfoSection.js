@@ -18,6 +18,31 @@ export default function ReportInfoSection({ report }) {
     }
   };
 
+  // Safe function to get a displayable address string
+  const getDisplayAddress = () => {
+    const addr = report.address;
+
+    // If no address at all
+    if (!addr) return 'Address not available';
+
+    // If address is old-style plain string (for backward compatibility)
+    if (typeof addr === 'string') return addr;
+
+    // New object style, prefer .full if it exists
+    if (addr.full && typeof addr.full === 'string') {
+      return addr.full;
+    }
+
+    // Build from parts as fallback
+    const parts = [];
+    if (addr.placeName) parts.push(addr.placeName);
+    if (addr.street) parts.push(addr.street);
+    if (addr.city) parts.push(addr.city);
+    if (addr.postcode) parts.push(addr.postcode);
+
+    return parts.length > 0 ? parts.join(', ') : 'Address not available';
+  };
+
   return (
     <View style={styles.container}>
       {/* Status Badge */}
@@ -48,28 +73,32 @@ export default function ReportInfoSection({ report }) {
 
       {/* Location Section */}
       <Text style={styles.sectionTitle}>Location</Text>
-      <Text style={styles.address}>{report.address || 'Address not available'}</Text>
+      <Text style={styles.address}>{getDisplayAddress()}</Text>
 
       {/* Map */}
-      <View style={styles.mapContainer}>
-        <MapView
-          style={styles.map}
-          region={{
-            latitude: report.location.latitude,
-            longitude: report.location.longitude,
-            latitudeDelta: 0.005,
-            longitudeDelta: 0.005,
-          }}
-        >
-          <Marker
-            coordinate={{
+      {report.location && report.location.latitude && report.location.longitude ? (
+        <View style={styles.mapContainer}>
+          <MapView
+            style={styles.map}
+            region={{
               latitude: report.location.latitude,
               longitude: report.location.longitude,
+              latitudeDelta: 0.005,
+              longitudeDelta: 0.005,
             }}
-            pinColor="#EF4444"
-          />
-        </MapView>
-      </View>
+          >
+            <Marker
+              coordinate={{
+                latitude: report.location.latitude,
+                longitude: report.location.longitude,
+              }}
+              pinColor="#EF4444"
+            />
+          </MapView>
+        </View>
+      ) : (
+        <Text style={styles.noMapText}>Map not available</Text>
+      )}
     </View>
   );
 }
@@ -152,5 +181,12 @@ const styles = StyleSheet.create({
   map: {
     width: '100%',
     height: '100%',
+  },
+  noMapText: {
+    fontSize: 16,
+    color: '#94a3b8',
+    fontStyle: 'italic',
+    textAlign: 'center',
+    marginBottom: 32,
   },
 });

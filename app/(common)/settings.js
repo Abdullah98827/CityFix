@@ -36,7 +36,6 @@ export default function SettingsScreen() {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
-  // Loads user data
   useEffect(() => {
     const loadUser = async () => {
       if (!auth.currentUser) {
@@ -62,16 +61,13 @@ export default function SettingsScreen() {
     loadUser();
   }, []);
 
-  // Uploads profile picture (ONLY PHOTOS)
   const handlePhotoPick = async () => {
-    // Requests permission
     const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (permissionResult.status !== 'granted') {
       Alert.alert('Permission Required', 'Please allow access to your photos');
       return;
     }
 
-    // Picks image directly
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images, 
       allowsEditing: true,
@@ -86,7 +82,6 @@ export default function SettingsScreen() {
     const photoUri = result.assets[0].uri;
     setUploadingPhoto(true);
 
-    // Upload to Firebase Storage
     const fileName = `profile_${auth.currentUser.uid}_${Date.now()}.jpg`;
     const storageRef = ref(storage, `profiles/${auth.currentUser.uid}/${fileName}`);
 
@@ -101,26 +96,20 @@ export default function SettingsScreen() {
       'state_changed',
       (snapshot) => {
         const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-        console.log('Upload is ' + progress + '% done');
       },
       (error) => {
-        console.error('Upload error:', error);
         Alert.alert('Upload Failed', 'Could not upload photo. Please try again.');
         setUploadingPhoto(false);
       },
       async () => {
-        // Upload completed successfully
         const url = await getDownloadURL(uploadTask.snapshot.ref);
 
-        // Update Firebase Auth profile
         await updateProfile(auth.currentUser, { photoURL: url });
 
-        // Update Firestore user document
         await updateDoc(doc(db, 'UserMD', auth.currentUser.uid), {
           photoURL: url
         });
 
-        // Logs profile picture update
         logAction('profile_picture_updated', null, 'User updated profile picture');
 
         setPhotoURL(url);
@@ -130,7 +119,6 @@ export default function SettingsScreen() {
     );
   };
 
-  // Saves name
   const handleSaveName = async () => {
     if (!name.trim()) {
       Alert.alert('Error', 'Name cannot be empty');
@@ -143,13 +131,11 @@ export default function SettingsScreen() {
       name: name.trim()
     });
 
-    // Logs name change
     logAction('profile_name_changed', null, `Changed from "${oldName}" to "${name.trim()}"`);
 
     Alert.alert('Success', 'Name updated successfully!');
   };
 
-  // Change password
   const handleChangePassword = async () => {
     if (!currentPassword) {
       Alert.alert('Error', 'Current password is required');
@@ -174,7 +160,6 @@ export default function SettingsScreen() {
 
     setChangingPassword(true);
 
-    // Re-authenticate user
     const credential = EmailAuthProvider.credential(
       auth.currentUser.email,
       currentPassword
@@ -182,7 +167,6 @@ export default function SettingsScreen() {
     const reauthResult = await reauthenticateWithCredential(auth.currentUser, credential);
 
     if (reauthResult.user) {
-      // Updates password
       const updateResult = await updatePassword(auth.currentUser, newPassword);
       if (updateResult === undefined) {
         Alert.alert('Success', 'Password changed successfully!');
@@ -211,7 +195,6 @@ export default function SettingsScreen() {
     <ScrollView style={styles.container}>
       <ReportHeader title="Settings" />
       <View style={styles.content}>
-        {/* Profile Picture */}
         <View style={styles.photoSection}>
           <TouchableOpacity
             onPress={handlePhotoPick}
@@ -241,7 +224,6 @@ export default function SettingsScreen() {
           />
         </View>
 
-        {/* User Info */}
         <View style={styles.infoSection}>
           <Text style={styles.sectionTitle}>Profile Information</Text>
           <CustomInput
@@ -267,7 +249,6 @@ export default function SettingsScreen() {
           </View>
         </View>
 
-        {/* Change Password */}
         <View style={styles.passwordSection}>
           <Text style={styles.sectionTitle}>Change Password</Text>
           <CustomInput
@@ -299,7 +280,6 @@ export default function SettingsScreen() {
           />
         </View>
 
-        {/* Sign Out */}
         <View style={styles.signOutSection}>
           <CustomButton
             title="Sign Out"

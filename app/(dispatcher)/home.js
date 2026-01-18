@@ -1,6 +1,6 @@
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { collection, doc, getDocs, orderBy, query, updateDoc, where } from 'firebase/firestore';
-import { useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -32,49 +32,56 @@ export default function DispatcherHome() {
   const [filter, setFilter] = useState('new');  
   const [unreadCount, setUnreadCount] = useState(0);
 
-  // Loads reports once when screen opens
-  useEffect(() => {
-    if (!auth.currentUser) return;
-
-    const fetchReports = async () => {
-      setLoading(true);
-
-      const q = query(
-        collection(db, 'reports'),
-        where('isDeleted', '==', false),
-        orderBy('createdAt', 'desc')
-      );
-
-      const snapshot = await getDocs(q);
-      const reportsList = [];
-
-      snapshot.forEach((doc) => {
-        const data = doc.data();
-        if (data.status !== 'merged') {    // skips already merged ones
-          reportsList.push({ id: doc.id, ...data });
-        }
-      });
-
-      setAllReports(reportsList);
-
-      // Runs auto-merge on submitted reports
-      const submittedReports = reportsList.filter(r => r.status === 'submitted');
-      if (submittedReports.length > 0) {
-        await autoMergeDuplicates(submittedReports);
-      }
-
-      // Shows the right view based on current filter
-      updateDisplayItems(reportsList, filter);
+  // This function fetches all reports from Firebase
+  const fetchReports = async () => {
+    if (!auth.currentUser) {
       setLoading(false);
-    };
+      return;
+    }
 
-    fetchReports();
-  }, []);
+    setLoading(true);
 
-  // Whenever filter or reports changes, refreshes what it shows
-  useEffect(() => {
-    updateDisplayItems(allReports, filter);
-  }, [filter, allReports]);
+    const q = query(
+      collection(db, 'reports'),
+      where('isDeleted', '==', false),
+      orderBy('createdAt', 'desc')
+    );
+
+    const snapshot = await getDocs(q);
+    const reportsList = [];
+
+    snapshot.forEach((doc) => {
+      const data = doc.data();
+      if (data.status !== 'merged') {    // skips already merged ones
+        reportsList.push({ id: doc.id, ...data });
+      }
+    });
+
+    setAllReports(reportsList);
+
+    // Runs auto-merge on submitted reports
+    const submittedReports = reportsList.filter(r => r.status === 'submitted');
+    if (submittedReports.length > 0) {
+      await autoMergeDuplicates(submittedReports);
+    }
+
+    // Shows the right view based on current filter
+    updateDisplayItems(reportsList, filter);
+    setLoading(false);
+  };
+
+  // This runs every time the screen comes into focus (when you navigate to it)
+  useFocusEffect(
+    useCallback(() => {
+      fetchReports();
+    }, [])
+  );
+
+  // Whenever filter changes, refreshes what it shows
+  const handleFilterChange = (newFilter) => {
+    setFilter(newFilter);
+    updateDisplayItems(allReports, newFilter);
+  };
 
   // Decide what to display: single reports or grouped duplicates
   const updateDisplayItems = (reportsList, currentFilter) => {
@@ -203,9 +210,9 @@ export default function DispatcherHome() {
     return grouped;
   };
 
-  // Used Haversine distance in km because its good for local council jobs
+  // Used Haversine distance in miles because its good for local council jobs
   const calculateDistance = (lat1, lon1, lat2, lon2) => {
-    const R = 6371;
+    const R = 3959;
     const dLat = (lat2 - lat1) * Math.PI / 180;
     const dLon = (lon2 - lon1) * Math.PI / 180;
     const a =
@@ -248,6 +255,9 @@ export default function DispatcherHome() {
       'Success',
       `${duplicates.length} duplicate(s) merged successfully!`
     );
+
+    // Refreshes the list after merging
+    await fetchReports();
   };
 
   // Quick counts for the tabs
@@ -279,7 +289,7 @@ export default function DispatcherHome() {
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
           <TouchableOpacity
             style={[styles.filterTab, filter === 'new' && styles.filterTabActive]}
-            onPress={() => setFilter('new')}
+            onPress={() => handleFilterChange('new')}
           >
             <Text style={[styles.filterText, filter === 'new' && styles.filterTextActive]}>
               New ({newCount})
@@ -287,7 +297,7 @@ export default function DispatcherHome() {
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.filterTab, filter === 'assigned' && styles.filterTabActive]}
-            onPress={() => setFilter('assigned')}
+            onPress={() => handleFilterChange('assigned')}
           >
             <Text style={[styles.filterText, filter === 'assigned' && styles.filterTextActive]}>
               Assigned ({assignedCount})
@@ -295,7 +305,7 @@ export default function DispatcherHome() {
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.filterTab, filter === 'all' && styles.filterTabActive]}
-            onPress={() => setFilter('all')}
+            onPress={() => handleFilterChange('all')}
           >
             <Text style={[styles.filterText, filter === 'all' && styles.filterTextActive]}>
               All ({allCount})
@@ -327,7 +337,7 @@ export default function DispatcherHome() {
                   </Text>
                   <Text style={styles.groupSubtitle}>
                     These reports are within {MANUAL_REVIEW_RADIUS_KM * 1000}m and {MANUAL_REVIEW_TIME_HOURS}h of each other.
-                    Review them and merge if they’re the same issue.
+                    Review them and merge if they`re the same issue.
                   </Text>
                   {item.reports.map((r) => (
                     <ReportCard

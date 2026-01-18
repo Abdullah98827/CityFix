@@ -1,9 +1,10 @@
-import { addDoc, collection, deleteDoc, doc, getDocs, updateDoc } from 'firebase/firestore';
-import { useEffect, useState } from 'react';
+import { addDoc, collection, deleteDoc, doc, getDocs } from 'firebase/firestore';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   FlatList,
+  Keyboard,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -19,8 +20,13 @@ import { logAction } from '../../utils/logger';
 export default function ZonesAdmin() {
   const [zones, setZones] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [drawingZone, setDrawingZone] = useState(null);
   const [newZoneName, setNewZoneName] = useState('');
+  const [suggestions, setSuggestions] = useState([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [currentPolygon, setCurrentPolygon] = useState([]);
+  const [currentCentre, setCurrentCentre] = useState(null);
+  const searchTimeout = useRef(null);
+  const mapRef = useRef(null);
 
   useEffect(() => {
     const fetchZones = async () => {
@@ -41,34 +47,91 @@ export default function ZonesAdmin() {
     fetchZones();
   }, []);
 
-  const startNewZone = () => {
-    setDrawingZone({ id: null, name: '', coordinates: [] });
-    setNewZoneName('');
+  const searchPlaces = async (text) => {
+    if (!text || text.length < 3) {
+      setSuggestions([]);
+      return;
+    }
+
+    const apiKey = process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY;
+    const url = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(text)}&key=${apiKey}&language=en&components=country:gb`;
+
+    const response = await fetch(url);
+    if (response.ok) {
+      const data = await response.json();
+      if (data.predictions) {
+        setSuggestions(data.predictions.slice(0, 5));
+        setShowSuggestions(true);
+      } else {
+        setSuggestions([]);
+      }
+    } else {
+      setSuggestions([]);
+    }
   };
 
-  const startEditing = (zone) => {
-    setDrawingZone({
-      id: zone.id,
-      name: zone.name,
-      coordinates: [...zone.polygon],
-    });
-    setNewZoneName(zone.name);
+  const handleSearchChange = (text) => {
+    setNewZoneName(text);
+    if (searchTimeout.current) clearTimeout(searchTimeout.current);
+    searchTimeout.current = setTimeout(() => searchPlaces(text), 500);
   };
 
-  const addPoint = (coordinate) => {
-    if (!drawingZone) return;
-    setDrawingZone({
-      ...drawingZone,
-      coordinates: [...drawingZone.coordinates, coordinate],
-    });
-  };
+  const selectPlace = async (placeId, description) => {
+    setNewZoneName(description);
+    setShowSuggestions(false);
+    setSuggestions([]);
+    Keyboard.dismiss();
 
-  const removeLastPoint = () => {
-    if (!drawingZone || drawingZone.coordinates.length === 0) return;
-    setDrawingZone({
-      ...drawingZone,
-      coordinates: drawingZone.coordinates.slice(0, -1),
-    });
+    const apiKey = process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY;
+    const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&key=${apiKey}&fields=geometry,bounds,name`;
+
+    const response = await fetch(url);
+    if (response.ok) {
+      const data = await response.json();
+      if (data.result?.geometry?.location) {
+        const { lat, lng } = data.result.geometry.location;
+        setCurrentCentre({ latitude: lat, longitude: lng });
+
+        if (mapRef.current) {
+          mapRef.current.animateToRegion({
+            latitude: lat,
+            longitude: lng,
+            latitudeDelta: 0.05,
+            longitudeDelta: 0.05,
+          }, 1000);
+        }
+
+        let polygon = [];
+        if (data.result.geometry.bounds) {
+          const ne = data.result.geometry.bounds.northeast;
+          const sw = data.result.geometry.bounds.southwest;
+          polygon = [
+            { latitude: ne.lat, longitude: ne.lng },
+            { latitude: ne.lat, longitude: sw.lng },
+            { latitude: sw.lat, longitude: sw.lng },
+            { latitude: sw.lat, longitude: ne.lng },
+            { latitude: ne.lat, longitude: ne.lng }
+          ];
+        } else {
+          const delta = 0.05;
+          polygon = [
+            { latitude: lat + delta, longitude: lng + delta },
+            { latitude: lat + delta, longitude: lng - delta },
+            { latitude: lat - delta, longitude: lng - delta },
+            { latitude: lat - delta, longitude: lng + delta },
+            { latitude: lat + delta, longitude: lng + delta }
+          ];
+        }
+        setCurrentPolygon(polygon);
+      } else {
+        setCurrentPolygon([]);
+        setCurrentCentre(null);
+      }
+    } else {
+      Alert.alert('Error', 'Could not load place boundary');
+      setCurrentPolygon([]);
+      setCurrentCentre(null);
+    }
   };
 
   const saveZone = async () => {
@@ -76,41 +139,24 @@ export default function ZonesAdmin() {
       Alert.alert('Error', 'Please enter a zone name');
       return;
     }
-    if (drawingZone.coordinates.length < 3) {
-      Alert.alert('Error', 'Please add at least 3 points to form a polygon');
+
+    if (currentPolygon.length < 3) {
+      Alert.alert('Error', 'No boundary found. Please select a place from suggestions.');
       return;
     }
 
     const zonesCollection = collection(db, 'ConfigMD', 'config', 'zones');
+    const docRef = await addDoc(zonesCollection, {
+      name: newZoneName.trim(),
+      polygon: currentPolygon,
+    });
 
-    if (drawingZone.id) {
-      // Updates existing zone
-      await updateDoc(doc(zonesCollection, drawingZone.id), {
-        name: newZoneName.trim(),
-        polygon: drawingZone.coordinates,
-      });
-
-      // Logs zone update
-      logAction('zone_updated', drawingZone.id, `Name: ${newZoneName.trim()}, Points: ${drawingZone.coordinates.length}`);
-
-      Alert.alert('Success', 'Zone updated');
-    } else {
-      // Creates new zone
-      const docRef = await addDoc(zonesCollection, {
-        name: newZoneName.trim(),
-        polygon: drawingZone.coordinates,
-      });
-
-      // Logs zone creation
-      logAction('zone_created', docRef.id, `Name: ${newZoneName.trim()}, Points: ${drawingZone.coordinates.length}`);
-
-      Alert.alert('Success', 'Zone created');
-    }
+    logAction('zone_created', docRef.id, `Name: ${newZoneName.trim()}, Points: ${currentPolygon.length}`);
+    Alert.alert('Success', 'Zone created');
 
     setNewZoneName('');
-    setDrawingZone(null);
+    setCurrentPolygon([]);
 
-    // Refresh list
     const snapshot = await getDocs(zonesCollection);
     const list = [];
     snapshot.forEach((doc) => {
@@ -118,11 +164,6 @@ export default function ZonesAdmin() {
       list.push({ id: doc.id, name: data.name || 'Unnamed Zone', polygon: data.polygon || [] });
     });
     setZones(list);
-  };
-
-  const cancelEditing = () => {
-    setDrawingZone(null);
-    setNewZoneName('');
   };
 
   const removeZone = (zoneId) => {
@@ -136,10 +177,7 @@ export default function ZonesAdmin() {
           style: 'destructive',
           onPress: async () => {
             await deleteDoc(doc(db, 'ConfigMD', 'config', 'zones', zoneId));
-
-            // Logs zone deletion
             logAction('zone_deleted', zoneId, 'Deleted by admin');
-
             setZones(zones.filter(z => z.id !== zoneId));
             Alert.alert('Success', 'Zone deleted');
           },
@@ -159,42 +197,57 @@ export default function ZonesAdmin() {
   return (
     <View style={styles.container}>
       <ReportHeader title="Manage Zones" />
+
       <FlatList
         data={zones}
         keyExtractor={(item) => item.id}
         ListHeaderComponent={
           <View style={styles.headerContent}>
             <Text style={styles.title}>Current Zones ({zones.length})</Text>
-            <Text style={styles.addTitle}>
-              {drawingZone ? `Editing "${drawingZone.name || 'New Zone'}"` : 'Create New Zone'}
-            </Text>
-            <Text style={styles.instruction}>Tap on the map to add points. Minimum 3 points.</Text>
+            <Text style={styles.addTitle}>Create New Zone</Text>
+            <Text style={styles.instruction}>Type any UK city or town name to auto-create boundary.</Text>
+
             <CustomInput
-              label="Zone Name"
-              placeholder="e.g. City Centre"
+              label="Zone Name / Place"
+              placeholder="e.g. Manchester, London, Birmingham, Leeds"
               value={newZoneName}
-              onChangeText={setNewZoneName}
+              onChangeText={handleSearchChange}
+              onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
             />
+
+            {showSuggestions && suggestions.length > 0 && (
+              <View style={styles.suggestionsBox}>
+                {suggestions.map((item) => (
+                  <TouchableOpacity
+                    key={item.place_id}
+                    style={styles.suggestionItem}
+                    onPress={() => selectPlace(item.place_id, item.description)}
+                  >
+                    <Text style={styles.suggestionText}>{item.description}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+
             <View style={styles.mapContainer}>
               <MapView
+                ref={mapRef}
                 style={styles.map}
                 initialRegion={{
                   latitude: 52.2405,
                   longitude: -0.9027,
-                  latitudeDelta: 0.05,
-                  longitudeDelta: 0.05,
+                  latitudeDelta: 0.1,
+                  longitudeDelta: 0.1,
                 }}
-                onPress={(e) => addPoint(e.nativeEvent.coordinate)}
                 scrollEnabled={true}
                 zoomEnabled={true}
                 pitchEnabled={true}
                 rotateEnabled={true}
               >
-                {/* Saved zones */}
                 {zones.map((zone) => {
                   if (zone.polygon.length < 3) return null;
-                  const latSum = zone.polygon.reduce((sum, coord) => sum + coord.latitude, 0);
-                  const lngSum = zone.polygon.reduce((sum, coord) => sum + coord.longitude, 0);
+                  const latSum = zone.polygon.reduce((sum, c) => sum + c.latitude, 0);
+                  const lngSum = zone.polygon.reduce((sum, c) => sum + c.longitude, 0);
                   const center = {
                     latitude: latSum / zone.polygon.length,
                     longitude: lngSum / zone.polygon.length,
@@ -215,55 +268,38 @@ export default function ZonesAdmin() {
                     </View>
                   );
                 })}
-                {/* Current drawing */}
-                {drawingZone && drawingZone.coordinates.length >= 3 && (
+
+                {currentPolygon.length >= 3 && (
                   <Polygon
-                    coordinates={drawingZone.coordinates}
+                    coordinates={currentPolygon}
                     strokeColor="#EF4444"
-                    fillColor="rgba(239, 68, 68, 0.2)"
+                    fillColor="rgba(239, 68, 68, 0.3)"
                     strokeWidth={3}
                   />
                 )}
-                {/* Current points */}
-                {drawingZone && drawingZone.coordinates.map((coord, i) => (
-                  <Marker key={i} coordinate={coord} pinColor="#EF4444" />
-                ))}
               </MapView>
             </View>
-            {drawingZone && (
-              <View style={styles.drawingActions}>
-                <CustomButton title="Save Zone" onPress={saveZone} variant="secondary" />
-                {drawingZone.coordinates.length > 0 && (
-                  <CustomButton title="Remove Last Point" onPress={removeLastPoint} variant="danger" style={{ marginTop: 8 }} />
-                )}
-                <CustomButton title="Cancel" onPress={cancelEditing} variant="danger" style={{ marginTop: 8 }} />
-              </View>
-            )}
-            {!drawingZone && (
-              <CustomButton
-                title="Start New Zone"
-                onPress={startNewZone}
-                variant="primary"
-              />
-            )}
+
+            <CustomButton
+              title="Save Zone"
+              onPress={saveZone}
+              variant="secondary"
+              style={{ marginTop: 16 }}
+              disabled={!newZoneName.trim() || currentPolygon.length < 3}
+            />
           </View>
         }
         renderItem={({ item }) => (
           <View style={styles.zoneCard}>
             <Text style={styles.zoneCardTitle}>{item.name}</Text>
-            <View style={styles.zoneCardActions}>
-              <TouchableOpacity onPress={() => startEditing(item)}>
-                <Text style={styles.editText}>Edit</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => removeZone(item.id)}>
-                <Text style={styles.removeText}>Remove</Text>
-              </TouchableOpacity>
-            </View>
+            <TouchableOpacity onPress={() => removeZone(item.id)}>
+              <Text style={styles.removeText}>Remove</Text>
+            </TouchableOpacity>
           </View>
         )}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
-            <Text style={styles.emptyText}>No zones yet. Start drawing below!</Text>
+            <Text style={styles.emptyText}>No zones yet. Type any UK city/town name above!</Text>
           </View>
         }
         contentContainerStyle={styles.listContent}
@@ -293,7 +329,6 @@ const styles = StyleSheet.create({
     elevation: 10,
   },
   map: { width: '100%', height: '100%' },
-  drawingActions: { marginBottom: 32 },
   zoneCard: {
     backgroundColor: '#fff',
     borderRadius: 20,
@@ -312,16 +347,36 @@ const styles = StyleSheet.create({
     color: '#1e293b',
     marginBottom: 12,
   },
-  zoneCardActions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: 24,
-  },
-  editText: { color: '#4F46E5', fontWeight: '600', fontSize: 16 },
-  removeText: { color: '#ef4444', fontWeight: '600', fontSize: 16 },
+  removeText: { color: '#ef4444', fontWeight: '600', fontSize: 16, textAlign: 'right' },
   emptyContainer: { padding: 40 },
   emptyText: { fontSize: 16, color: '#64748b', textAlign: 'center' },
   listContent: { paddingBottom: 40 },
+  suggestionsBox: {
+    position: 'absolute',
+    top: 110,
+    left: 24,
+    right: 24,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    maxHeight: 200,
+    zIndex: 10,
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+  },
+  suggestionItem: {
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  suggestionText: {
+    fontSize: 15,
+    color: '#333',
+  },
   zoneLabelContainer: {
     backgroundColor: '#4F46E5',
     paddingHorizontal: 16,

@@ -1,4 +1,3 @@
-// utils/logger.js
 import { getAuth } from 'firebase/auth';
 import { addDoc, collection, doc, getDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../backend/firebase';
@@ -36,6 +35,6 @@ export const logAction = async (action, reportId = null, details = '') => {
 
   // Fire and forget
   addDoc(collection(db, 'logs'), logData).catch(() => {
-    // Ignore any write errors
+    // Ignores any write errors
   });
 };

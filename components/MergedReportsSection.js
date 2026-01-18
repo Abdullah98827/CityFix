@@ -65,7 +65,6 @@ export default function MergedReportsSection({ masterReport, role = 'dispatcher'
 
   return (
     <View style={styles.container}>
-      {/* Header with icon and count */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           <View style={styles.iconBadge}>
